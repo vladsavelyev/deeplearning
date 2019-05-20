@@ -2,6 +2,9 @@ import itertools
 import math
 import random
 import numpy as np
+import datetime
+
+from digits.load_data import get_X, get_Y, evaluate, collapse_digits, expand_digits
 
 
 class NeuralNetwork:
@@ -31,48 +34,55 @@ class NeuralNetwork:
 
     @staticmethod
     def _predict(A):
-        return np.argmax(A, axis=0)  # convert to the flat shape (array of digits 0-9)
+        return collapse_digits(A)
 
     def predict(self, X):
         activations, _ = self.feedforward(X)
         return self._predict(activations[-1])
 
-    def learn(self, train_X, train_Y, epochs, learning_rate, batch_max_size,
-              test_X=None, test_Y=None, print_cost=False):
-
+    @staticmethod
+    def shuffle(X, Y):
         # Shuffle training data
-        np.random.seed(1)
         state = np.random.get_state()
-        np.random.shuffle(train_X)
+        np.random.shuffle(X)
         np.random.set_state(state)
-        np.random.shuffle(train_Y)
+        np.random.shuffle(Y)
+
+    def learn(self, train_data, epochs, learning_rate, batch_max_size,
+              test_data=None, print_cost_every=None):
 
         # Partition into smaller batches
-        m = train_X.shape[1]
+        m = train_data.shape[0]
         n_batches = math.ceil(m / batch_max_size)
         batch_size = math.ceil(m / n_batches)
-        X_batches = [train_X[:, k*batch_size:(k+1)*batch_size] for k in range(n_batches)]
-        Y_batches = [train_Y[:, k*batch_size:(k+1)*batch_size] for k in range(n_batches)]
+
+        test_X = get_X(test_data)
+        test_Y = get_Y(test_data)
+        Y_classes = get_Y(train_data).shape[0]
 
         for epoch in range(epochs):
+            np.random.shuffle(train_data)
+            batches = [train_data[k*batch_size:(k+1)*batch_size] for k in range(n_batches)]
 
             output_activations = []
-            for X, Y in zip(X_batches, Y_batches):
-                activations, zs = self.feedforward(X)
-                self.backprop(activations, zs, Y, learning_rate)
+            for batch in batches:
+                batch_X = get_X(batch)
+                batch_Y = get_Y(batch)
+                activations, zs = self.feedforward(batch_X)
+                self.backprop(activations, zs, batch_Y, learning_rate)
                 output_activations.append(activations[-1])
 
-            if epoch % (epochs//10) == 0 or epoch == epochs-1:
+            # if epoch % (epochs//10) == 0 or epoch == epochs-1:
+            if print_cost_every and (epoch % print_cost_every == 0 or epoch == epochs-1):
                 print(f"Epoch {epoch+1}", end='')
 
-                if print_cost:
-                    output_activation = np.concatenate(output_activations, axis=1)
-                    cost = calc_cost(output_activation, train_Y)
-                    print(f", cost: {cost}", end='')
+                output_activation = np.concatenate(output_activations, axis=1)
+                cost = calc_cost(output_activation, get_Y(train_data))
+                print(f", cost: {cost}", end='')
 
-                if test_X is not None:
-                    pred_Y = self.predict(test_X)
-                    acc = evaluate(pred_Y, test_Y)
+                if test_data is not None:
+                    predictions = self.predict(test_X)
+                    acc = evaluate(predictions, test_Y, Y_classes)
                     print(f", accuracy: {acc}", end='')
                 print()
 
@@ -95,13 +105,6 @@ class NeuralNetwork:
             dAk = dAj
 
 
-def evaluate(pred_Y, test_Y):
-    """ assume pred_Y and test_Y are 1-dim arrays of integers 0 through 9
-    """
-    assert pred_Y.shape == test_Y.shape, (pred_Y.shape, test_Y.shape)
-    return sum(int(p == t) for p, t in zip(pred_Y, test_Y)) / len(pred_Y)
-
-
 def sigmoid(x):
     return 1/(1 + np.exp(-x))
 
@@ -114,5 +117,6 @@ def calc_cost(A, train_Y):
     """ assume test_Y and pred_Y are 1-dim arrays of 9 integers 0 or 1
     """
     assert A.shape == train_Y.shape, (A.shape, train_Y.shape)  # (m, 1)
-    return np.mean(np.mean((train_Y - A) ** 2, axis=0))
+    m = A.shape[0]
+    return np.sum(np.abs(train_Y - A)) / (2 * m)
 

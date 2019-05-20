@@ -15,15 +15,15 @@ def load_mnist():
     with gzip.open(path, 'rb') as f:
         (train_X, train_Y), (valid_X, valid_Y), (test_X, test_Y) = pickle.load(f, encoding='bytes')
 
-    train_X = train_X.T
-    test_X = test_X.T
-    valid_X = valid_X.T
-
     Y_classes = 10
-    return Y_classes, (train_X, train_Y), (test_X, test_Y), (valid_X, valid_Y)
+    train_Y = expand_digits(train_Y, Y_classes)
+    test_Y = expand_digits(test_Y, Y_classes)
+    valid_Y = expand_digits(valid_Y, Y_classes)
+    return Y_classes, make_data(train_X, train_Y), make_data(test_X, test_Y), make_data(valid_X, valid_Y)
 
 
 def load_toy():
+    Y_classes = 2
     train_X = np.array([
         [0,1,0,
          0,1,0,
@@ -48,8 +48,8 @@ def load_toy():
         [0,1,0,
          1,0,1,
          0,1,0],
-    ]).T
-    train_Y = np.array([1,1,1,0,0,0]).T
+    ])
+    train_Y = expand_digits([1,1,1,0,0,0], Y_classes)
 
     test_X = np.array([
         [0,1,1,
@@ -79,14 +79,13 @@ def load_toy():
         [0,1,1,
          1,1,1,
          0,1,1],
-    ]).T
-    test_Y = np.array([1,1,1,1,0,0,0]).T
-
-    Y_classes = 2
-    return Y_classes, (train_X, train_Y), (test_X, test_Y), (None, None)
+    ])
+    test_Y = expand_digits([1,1,1,1,0,0,0], Y_classes)
+    return Y_classes, make_data(train_X, train_Y), make_data(test_X, test_Y), None
 
 
 def load_toy2():
+    Y_classes = 2
     train_X = np.array([
         [0,0,1,
          0,0,0,
@@ -111,8 +110,8 @@ def load_toy2():
         [0,0,0,
          0,0,0,
          1,1,0],
-    ]).T
-    train_Y = np.array([1,1,1,0,0,0]).T
+    ])
+    train_Y = expand_digits([1,1,1,0,0,0], Y_classes)
 
     test_X = np.array([
         [0,1,1,
@@ -126,9 +125,59 @@ def load_toy2():
         [0,0,0,
          0,0,0,
          1,0,0]
-    ]).T
-    test_Y = np.array([1,1,0]).T
+    ])
+    test_Y = expand_digits(np.array([1,1,0]), Y_classes)
+    return Y_classes, make_data(train_X, train_Y), make_data(test_X, test_Y), None
 
-    Y_classes = 2
-    return Y_classes, (train_X, train_Y), (test_X, test_Y), (None, None)
+
+def make_data(X, Y):
+    # assuming X is an array of m training examples of k dimentions (shape = (m, k))
+    # and Y is an array of m training examples of j dimentions (shape = (m, j))
+    # making an array of tuples of shape (m, 2)
+    return np.array(list(zip(X, Y)))
+
+
+def expand_digits(Y, Y_classes):
+    # convert Y digits to 10-long arrays of 0 or 1
+    return np.array([[int(i == y) for i in range(Y_classes)] for y in Y])
+
+
+def collapse_digits(Y):
+    # converts to the flat shape (array of digits 0-9)
+    return np.argmax(Y, axis=0)
+
+
+def evaluate(pred_Y, test_Y, Y_classes):
+    """ assume pred_Y and test_Y are 1-dim arrays of integers 0 through 9
+    """
+    if len(pred_Y.shape) == 1:
+        pred_Y = expand_digits(pred_Y, Y_classes).T
+    if test_Y.shape[0] > 1: test_Y = collapse_digits(test_Y)
+    if pred_Y.shape[0] > 1: pred_Y = collapse_digits(pred_Y)
+    assert pred_Y.shape == test_Y.shape, (pred_Y.shape, test_Y.shape)
+    return sum(int(p == t) for p, t in zip(pred_Y, test_Y)) / len(pred_Y)
+
+
+def get_X(data):
+    # assuming data is an array of tuples of shape (m, 2).
+    # extracing array of Xs of size (m, 1), and recombining elements into
+    # an array of size (k, m) again using np.stack
+    return np.stack(data[:, 0]).T
+
+
+def get_Y(data):
+    # assuming data is an array of tuples of shape (m, 2).
+    # extracing array of Xs of size (m, 1), and recombining elements into
+    # an array of size (j, m) again using np.stack
+    return np.stack(data[:, 1]).T
+
+
+def get_Y_flat(data):
+    # assuming data is an array of tuples of shape (m, 2).
+    # extracing array of Xs of size (m, 1), and recombining elements into
+    # an array of size (1, m) again using np.stack
+    # the difference with get_Y is that it returns 1-dimentional Ys containing 1 digit 0-9
+    return np.stack(data[:, 1]).T
+
+
 
