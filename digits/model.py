@@ -92,9 +92,18 @@ class NeuralNetwork:
         dAk  = Y - Ak   dZk = dAk * s'(Zk)  dWkj = dZk.T x Aj, dBk = dZk, dAj = dZk x Wkj
         """
         m = train_Y.shape[1]
-        dAk = activations[-1] - train_Y
+
+        # For quadractic cost:
+        # dAk = activations[-1] - train_Y
+
+        # For cross-entropy cost:
+        dZk = activations[-1] - train_Y
+        dAk = None
+
         for k, Zk, Ak, Aj in reversed(list(zip(itertools.count(), zs, activations[1:], activations[:-1]))):
-            dZk = dAk * sigmoid_prime(Zk)
+            if dZk is None:
+                dZk = dAk * sigmoid_prime(Zk)
+
             dWkj = np.dot(dZk, Aj.T) / m   # (k_layer_size, m) x (j_layer_size, m).T -> (k_ls, j_ls)
             dBk = np.sum(dZk, axis=1, keepdims=1) / m  # (k_layer_size, 1)
             dAj = np.dot(self.weights[k].T, dZk)  # (j_ls, k_ls) x (k_ls, m) -> (j_ls, m)
@@ -102,6 +111,8 @@ class NeuralNetwork:
             self.weights[k] -= learning_rate * dWkj
             # print(dBk.shape, self.biases[k].shape)
             self.biases[k] -= learning_rate * dBk
+            # move to the next layer
+            dZk = None
             dAk = dAj
 
 
@@ -113,10 +124,21 @@ def sigmoid_prime(z):
     return sigmoid(z) * (1 - sigmoid(z))
 
 
-def calc_cost(A, train_Y):
+def calc_cost_quadratic(A, train_Y):
     """ assume test_Y and pred_Y are 1-dim arrays of 9 integers 0 or 1
     """
     assert A.shape == train_Y.shape, (A.shape, train_Y.shape)  # (m, 1)
     m = A.shape[0]
-    return np.sum(np.abs(train_Y - A)) / (2 * m)
+    cost = np.sum(np.abs(train_Y - A)) / (2 * m)
+    assert(isinstance(cost, float))
+    return cost
+
+
+def calc_cost(A, Y):
+    assert A.shape == Y.shape, (A.shape, Y.shape)  # (m, 1)
+    m = A.shape[0]
+    cost = -1/m * np.sum(Y * np.log(A) + (1 - Y) * np.log(1 - A))
+    assert(isinstance(cost, float))
+    return cost
+
 

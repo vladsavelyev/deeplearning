@@ -42,10 +42,10 @@ def show_weights(nn, layer_n=1):
 print('Loading data...')
 
 Y_classes, train, test, valid = load_mnist()
-hidden_layers = [30]
+hidden_layers = [100]
 epochs = 30
-learning_rate = 3.0
-batch_size = 10
+learning_rate = 0.5
+batch_size = 20
 
 # Y_classes, train, test, valid = load_toy()
 # hidden_layers = [8]
@@ -57,7 +57,7 @@ batch_size = 10
 #%%
 nn = NeuralNetwork([get_X(train).shape[0]] + hidden_layers + [get_Y(train).shape[0]])
 print('Training the NN...')
-nn.learn(train, epochs, learning_rate, batch_size, test, 1)
+nn.learn(train, epochs, learning_rate, batch_size, test, 10)
 # show_images(train_X, nn.predict(train_X))
 
 pred_Y = nn.predict(get_X(test))
