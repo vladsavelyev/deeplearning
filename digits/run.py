@@ -14,6 +14,7 @@ np.random.seed(1)
 
 
 def show_images(X, Y=None):
+    # X.shape == (pixels, images)
     datas = X.T
     cmaps = itertools.repeat('Reds')
     if Y is not None:
@@ -29,6 +30,9 @@ def show_images(X, Y=None):
     for i, (x, cm) in enumerate(zip(datas, cmaps)):
         i, j = i//cols, i%cols
         width = math.ceil(math.sqrt(x.shape[0]))
+        plt.axis('off')
+        axes[i, j].get_xaxis().set_visible(False)
+        axes[i, j].get_yaxis().set_visible(False)
         axes[i, j].imshow(x.reshape((width, width)), cmap=cm)
     plt.show()
 
@@ -45,7 +49,8 @@ Y_classes, train, test, valid = load_mnist()
 hidden_layers = [100]
 epochs = 30
 learning_rate = 0.5
-batch_size = 20
+batch_size = 10
+lamb = 5.0
 
 # Y_classes, train, test, valid = load_toy()
 # hidden_layers = [8]
@@ -57,7 +62,7 @@ batch_size = 20
 #%%
 nn = NeuralNetwork([get_X(train).shape[0]] + hidden_layers + [get_Y(train).shape[0]])
 print('Training the NN...')
-nn.learn(train, epochs, learning_rate, batch_size, test, 10)
+nn.learn(train, epochs, learning_rate, batch_size, test_data=test, print_cost_every=10, regul_param=5.0)
 # show_images(train_X, nn.predict(train_X))
 
 pred_Y = nn.predict(get_X(test))
@@ -67,4 +72,29 @@ pred_Y = nn.predict(get_X(test))
 acc = evaluate(pred_Y, get_Y(test), Y_classes)
 print(f'Accuracy: {acc}')
 
-show_images(nn.weights[0][0:9,:].T)
+# show_images(nn.weights[0][0:9,:].T)
+#
+# # show average of all weights of first layer
+# w_784_10 = np.dot(nn.weights[0].T + nn.biases[0].T, nn.weights[1].T) + nn.biases[1].T
+# show_images(w_784_10)
+#
+# # train on digit 3 and show weights that are activated highly:
+# As, Zs = nn.feedforward(get_X(train)[:,0:1])
+# ws = nn.weights[0][np.where(np.round(As[-2]*1000) >= 1000, 1, 0)[:,0],:]
+# # we.shape == (784, number-of-images)
+# show_images(ws.T)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
