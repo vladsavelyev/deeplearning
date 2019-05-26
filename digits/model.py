@@ -187,7 +187,26 @@ def regularized_cost(a, y, weights, regul_param):
     return cost + regularization
 
 
+def save_nn(nn: NeuralNetwork, fpath):
+    """ Save the neural network to the file `fpath`
+    """
+    data = {"sizes": nn.layer_sizes,
+            "weights": [w.tolist() for w in nn.weights],
+            "biases": [b.tolist() for b in nn.biases],
+            }
+    with open(fpath, 'w') as f:
+        json.dump(data, f)
 
 
+def load_nn(fpath):
+    """ Load a neural network from the file `fpath`.
+        Returns an instance of NeuralNetwork.
+    """
+    with open(fpath) as f:
+        data = json.load(f)
 
+    net = NeuralNetwork(data['sizes'])
+    net.weights = [np.array(w) for w in data['weights']]
+    net.biases = [np.array(b) for b in data['biases']]
+    return net
 
