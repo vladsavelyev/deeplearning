@@ -147,15 +147,15 @@ def collapse_digits(Y):
     return np.argmax(Y, axis=0)
 
 
-def evaluate(pred_Y, test_Y, Y_classes):
+def evaluate(pred_Y, val_Y, Y_classes):
     """ assume pred_Y and test_Y are 1-dim arrays of integers 0 through 9
     """
     if len(pred_Y.shape) == 1:
         pred_Y = expand_digits(pred_Y, Y_classes).T
-    if test_Y.shape[0] > 1: test_Y = collapse_digits(test_Y)
+    if val_Y.shape[0] > 1: val_Y = collapse_digits(val_Y)
     if pred_Y.shape[0] > 1: pred_Y = collapse_digits(pred_Y)
-    assert pred_Y.shape == test_Y.shape, (pred_Y.shape, test_Y.shape)
-    return sum(int(p == t) for p, t in zip(pred_Y, test_Y)) / len(pred_Y)
+    assert pred_Y.shape == val_Y.shape, (pred_Y.shape, val_Y.shape)
+    return sum(int(p == t) for p, t in zip(pred_Y, val_Y)) / len(pred_Y)
 
 
 def get_X(data):

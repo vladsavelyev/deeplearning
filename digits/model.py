@@ -9,6 +9,19 @@ from digits.load_data import get_X, get_Y, evaluate, collapse_digits
 
 
 class NeuralNetwork:
+
+    @staticmethod
+    def run(train_data, valid_data, **hparams):
+        hparams = hparams.copy()
+        print(f'Training the NN with hyperparams {hparams}')
+        train_data = train_data[:hparams.pop('subset')]
+        layers = [get_X(train_data).shape[0]]
+        if 'hidden_layer' in hparams:
+            layers.append(hparams.pop('hidden_layer'))
+        layers.append(get_Y(train_data).shape[0])
+        nn = NeuralNetwork(layers)
+        return nn, nn.learn(np.copy(train_data), valid_data=valid_data, **hparams)
+
     def __init__(self, layer_sizes):
         np.random.seed(2)
         self.layer_sizes = layer_sizes
@@ -82,16 +95,25 @@ class NeuralNetwork:
 
         return accs, costs
 
-                output_activation = np.concatenate(output_activations, axis=1)
-                y = get_Y(train_data)
-                cost = regularized_cost(output_activation, y, self.weights, lamb=regul_param)
-                print(f", cost: {cost}", end='')
+    def monitor(self, epoch_n, train_data, regul_param, valid_data=None):
+        print(f"Epoch {epoch_n}", end='')
+        cost = None
+        acc = None
 
-                if test_data is not None:
-                    predictions = self.predict(test_X)
-                    acc = evaluate(predictions, test_Y, Y_classes)
-                    print(f", accuracy: {acc}", end='')
-                print()
+        activations, zs = self.feedforward(get_X(train_data))
+        y = get_Y(train_data)
+        cost = regularized_cost(activations[-1], y, self.weights, regul_param=regul_param)
+        print(f", cost: {cost}", end='')
+
+        if valid_data is not None:
+            val_X = get_X(valid_data)
+            val_Y = get_Y(valid_data)
+            Y_classes = get_Y(train_data).shape[0]
+            predictions = self.predict(val_X)
+            acc = evaluate(predictions, val_Y, Y_classes)
+            print(f", accuracy: {acc}", end='')
+        print()
+        return acc, cost
 
     def backprop(self, n, activations, zs, train_Y, learning_rate, regul_param, inercia):
         """
