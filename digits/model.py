@@ -1,4 +1,5 @@
 import itertools
+import json
 import math
 import random
 import numpy as np
@@ -9,11 +10,13 @@ from digits.load_data import get_X, get_Y, evaluate, collapse_digits
 
 class NeuralNetwork:
     def __init__(self, layer_sizes):
+        np.random.seed(2)
         self.layer_sizes = layer_sizes
-        self.weights = [np.random.randn(k, j)
-                        for k, j in zip(layer_sizes[1:], layer_sizes[:-1])]
-        self.biases = [np.random.randn(l, 1)
-                       for l in layer_sizes[1:]]
+        self.weights = [np.random.randn(k, j) / np.sqrt(j)
+                        for j, k in zip(layer_sizes[:-1], layer_sizes[1:])]
+        self.momentums = [np.ones(w.shape) for w in self.weights]
+        self.biases = [np.random.randn(k, 1)
+                       for k in layer_sizes[1:]]
 
     def feedforward(self, X):
         A = X  # activation of the zero'th layer = input layer, shape = (i'th, m)
@@ -40,41 +43,44 @@ class NeuralNetwork:
         activations, _ = self.feedforward(X)
         return self._predict(activations[-1])
 
-    @staticmethod
-    def shuffle(X, Y):
-        # Shuffle training data
-        state = np.random.get_state()
-        np.random.shuffle(X)
-        np.random.set_state(state)
-        np.random.shuffle(Y)
-
-    def learn(self, train_data, epochs, learning_rate, batch_max_size,
-              test_data=None, print_cost_every=None, regul_param=0.01):
+    def learn(self, train_data, valid_data=None, epochs=100, learning_rate=0.01, batch_max_size=10,
+              regul_param=0.01, early_stop=10, inercia=1.0):
 
         # Partition into smaller batches
         n = train_data.shape[0]
         n_batches = math.ceil(n / batch_max_size)
         batch_size = math.ceil(n / n_batches)
 
-        test_X = get_X(test_data)
-        test_Y = get_Y(test_data)
-        Y_classes = get_Y(train_data).shape[0]
-
+        accs = []
+        costs = []
+        ini_learning_rate = learning_rate
+        np.random.seed(3)
         for epoch in range(epochs):
             np.random.shuffle(train_data)
-            batches = [train_data[k*batch_size:(k+1)*batch_size] for k in range(n_batches)]
+            batches = [train_data[bn*batch_size:(bn+1)*batch_size] for bn in range(n_batches)]
 
             output_activations = []
             for batch in batches:
                 batch_X = get_X(batch)
                 batch_Y = get_Y(batch)
                 activations, zs = self.feedforward(batch_X)
-                self.backprop(n, activations, zs, batch_Y, learning_rate, regul_param=regul_param)
+                self.backprop(n, activations, zs, batch_Y, learning_rate, regul_param=regul_param, inercia=inercia)
                 output_activations.append(activations[-1])
 
-            # if epoch % (epochs//10) == 0 or epoch == epochs-1:
-            if print_cost_every and (epoch % print_cost_every == 0 or epoch == epochs-1):
-                print(f"Epoch {epoch+1}", end='')
+            acc, cost = self.monitor(epoch + 1, train_data, regul_param, valid_data=valid_data)
+            costs.append(cost)
+            accs.append(acc)
+            if early_stop and \
+                    len(accs) > early_stop and \
+                    all(acc < a for a in accs[-early_stop-1:-1]):
+                learning_rate /= 2
+                print(f'Decreasing learning rate to {learning_rate}')
+                if learning_rate < ini_learning_rate/128:
+                    print(f'Learning rate dropped down to {learning_rate}<{ini_learning_rate}/128,'
+                          f'stopping at epoch {epoch}')
+                    break
+
+        return accs, costs
 
                 output_activation = np.concatenate(output_activations, axis=1)
                 y = get_Y(train_data)
@@ -87,7 +93,7 @@ class NeuralNetwork:
                     print(f", accuracy: {acc}", end='')
                 print()
 
-    def backprop(self, n, activations, zs, train_Y, learning_rate, regul_param):
+    def backprop(self, n, activations, zs, train_Y, learning_rate, regul_param, inercia):
         """
         n is the size of full training set
 
@@ -116,9 +122,20 @@ class NeuralNetwork:
             dZk = None
 
         # updating weights and b iases
-        for Wk, Bk, dWk, dBk in zip(self.weights, self.biases, dW, dB):
-            Wk -= learning_rate * (regul_param / n * Wk + dWk)
-            Bk -= learning_rate * dBk
+        for k, Mk, Wk, Bk, dWk, dBk, in reversed(list(zip(
+                itertools.count(), self.momentums, self.weights, self.biases, dW, dB))):
+            # for Vk, Wk, Bk, dWk, dBk in zip(self.velocities, self.weights, self.biases, dW, dB):
+            #     self.velocities[k] = friction * self.velocities[k] - learning_rate * dW[k]
+            #     self.weights[k] += self.velocities[k]
+            #     self.weights[k] -= learning_rate * (regul_param / n * self.weights[k])  # regularization
+            #     Vk = friction * Vk - learning_rate * dWk
+            Mk = Mk * inercia - learning_rate * dWk  # calculating new momentum at the moment
+            Wk += Mk  # updating the weight with the momentum
+            Wk -= learning_rate * (regul_param / n * self.weights[k])  # applying regularization
+            Bk -= learning_rate * dBk  # updating the biases - simply, without momentum or regularization
+            self.momentums[k] = Mk
+            self.weights[k] = Wk
+            self.biases[k] = Bk
 
 def sigmoid(x):
     return 1/(1 + np.exp(-x))
@@ -140,11 +157,11 @@ def cross_entropy_cost(a, y):
     return -np.sum(np.nan_to_num(y * np.log(a) + (1 - y) * np.log(1 - a)))
 
 
-def regularized_cost(a, y, weights, lamb):
+def regularized_cost(a, y, weights, regul_param):
     # a.shape = (m, 1)
     cost = cross_entropy_cost(a, y)
     n = a.shape[0]
-    regularization = 0.5 * (lamb / n) * sum(np.linalg.norm(w)**2 for w in weights)
+    regularization = 0.5 * (regul_param / n) * sum(np.linalg.norm(w) ** 2 for w in weights)
     return cost + regularization
 
 
