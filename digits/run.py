@@ -104,20 +104,33 @@ show(px.line(df, x='epoch', y='acc', color='key', title=str(common_paras)))
 # w_784_10 = np.dot(nn.weights[0].T + nn.biases[0].T, nn.weights[1].T) + nn.biases[1].T
 # show_images(w_784_10)
 #
-# # train on digit 3 and show weights that are activated highly:
+# # train on digit 1 and show weights that are activated highly:
 # As, Zs = nn.feedforward(get_X(train)[:,0:1])
 # ws = nn.weights[0][np.where(np.round(As[-2]*1000) >= 1000, 1, 0)[:,0],:]
 # # we.shape == (784, number-of-images)
 # show_images(ws.T)
+# # show 4th image (a 3)
+# show_images(get_X(train)[:,3:4])
 
+def explore_0layer_nn():
+    # accuracy for each digit type
+    plots = []
+    for i in range(10):
+        y = collapse_digits(get_Y(test))
+        yi = y[y == i]
+        x = get_X(test).T
+        xi = x[y == i].T
+        predictions = nn.predict(xi)
+        acc = sum(int(p == t) for p, t in zip(predictions, yi)) / len(yi)
+        print(f"Accuracy for digit {i}: {acc}")
 
+        # plottoing for 1 example
+        test_digit = xi[:,i:i+1]
+        As, Zs = nn.feedforward(test_digit)
+        weight = np.mean((As[-1] * nn.weights[0]).T, axis=1).reshape((xi.shape[0],1))
+        plots.extend([test_digit, weight])
 
-
-
-
-
-
-
+    show_images(np.concatenate(plots, axis=1), cols=4)
 
 
 
