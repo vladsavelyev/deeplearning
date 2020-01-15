@@ -16,8 +16,8 @@ class NeuralNetwork:
         print(f'Training the NN with hyperparams {hparams}')
         train_data = train_data[:hparams.pop('subset')]
         layers = [get_X(train_data).shape[0]]
-        if 'hidden_layer' in hparams:
-            layers.append(hparams.pop('hidden_layer'))
+        if 'hidden_layers' in hparams:
+            layers.extend(hparams.pop('hidden_layers'))
         layers.append(get_Y(train_data).shape[0])
         nn = NeuralNetwork(layers)
         return nn, nn.learn(np.copy(train_data), valid_data=valid_data, **hparams)

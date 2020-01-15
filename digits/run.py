@@ -1,9 +1,6 @@
 import itertools
 import math
 import random
-from dataclasses import dataclass
-from typing import List
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,7 +8,8 @@ import plotly_express as px
 import plotly
 show = plotly.offline.plot
 from digits.load_data import load_mnist, load_toy2, get_Y, get_X, load_toy, collapse_digits, make_data
-from digits.model import NeuralNetwork, evaluate
+from digits.simple_model import NeuralNetwork, evaluate
+import seaborn as sns
 
 np.set_string_function(lambda a: str(a.shape), repr=False)
 
@@ -46,37 +44,21 @@ def show_weights(nn, layer_n=1):
     show_images(second_layer.T)
 
 
-#%%
 print('Loading data...')
 Y_classes, train, test, valid = load_mnist()
 
 
-# @dataclass
-# class HyperParams:
-#     hidden_layers: List[int]
-#     epochs: int
-#     learning_rate: float
-#     batch_size: int
-#     regul_param: float
-#
-#     def run(self):
-
+df = pd.DataFrame(dict(epoch=[], cost=[], acc=[], key=[]))
 
 all_hparams = [
-    dict(inercia=0,     subset=50000, hidden_layer=100, epochs=50, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5),
-    dict(inercia=0.02,  subset=50000, hidden_layer=100, epochs=50, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5),
-    dict(inercia=0.03,  subset=50000, hidden_layer=100, epochs=50, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5),
-    dict(inercia=0.04,  subset=50000, hidden_layer=100, epochs=50, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5),
-    # dict(hidden_layer=100, epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5, friction=0.9),
-    # dict(hidden_layer=100, epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5, friction=0.7),
-    # dict(hidden_layer=100, epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5, friction=0.5),
-    # dict(hidden_layer=100, epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5, friction=1.1),
-    # dict(hidden_layer=100, epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=5, friction=0),
+    # dict(inercia=0.04, subset=5000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=1),
+    # dict(inercia=0.04, subset=1000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=1),
+    dict(inercia=0.04, subset=1000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=1.0, early_stop=1),
+    # dict(inercia=0.04, subset=1000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=5.0, early_stop=1),
 ]
-df = pd.DataFrame(dict(epoch=[], cost=[], acc=[], key=[]))
 for hparams in all_hparams:
     key = {k: v for k, v in hparams.items() if len(list(set(d[k] for d in all_hparams))) > 1}
-    key = str(key)
+    key = ', '.join(f'{k}: {v}' for k, v in key.items())
     nn, (accs, costs) = NeuralNetwork.run(train, valid_data=valid, **hparams)
     df = df.append(pd.DataFrame(dict(epoch=range(len(costs)), cost=costs, acc=accs, key=key)))
 
@@ -84,9 +66,11 @@ for hparams in all_hparams:
     pred_Y = nn.predict(get_X(test))
     acc = evaluate(pred_Y, get_Y(test), Y_classes)
     print(f'Accuracy on test data: {acc}')
+    print()
 
-common_paras = {k: v for k, v in all_hparams[0].items() if len(list(set(d[k] for d in all_hparams))) == 1}
-show(px.line(df, x='epoch', y='acc', color='key', title=str(common_paras)))
+cmn_params = {k: v for k, v in all_hparams[0].items() if len(list(set(d[k] for d in all_hparams))) == 1}
+cmn_params = [f'{k}: {v}' for k, v in cmn_params.items()]
+show(px.line(df, x='epoch', y='acc', color='key', title=', '.join(cmn_params)))
 
 
 # Y_classes, train, test, valid = load_toy()
