@@ -1,9 +1,7 @@
 import itertools
 import json
 import math
-import random
 import numpy as np
-import datetime
 
 from digits.load_data import get_X, get_Y, evaluate, collapse_digits
 
@@ -72,12 +70,20 @@ class NeuralNetwork:
             np.random.shuffle(train_data)
             batches = [train_data[bn*batch_size:(bn+1)*batch_size] for bn in range(n_batches)]
 
+            # gradient_B = [np.zeros(b.shape) for b in self.biases]
+            # gradient_W = [np.zeros(w.shape) for w in self.weights]
             output_activations = []
+            # calculating the gradient by summing over minibatches backprops
             for batch in batches:
                 batch_X = get_X(batch)
                 batch_Y = get_Y(batch)
                 activations, zs = self.feedforward(batch_X)
-                self.backprop(n, activations, zs, batch_Y, learning_rate, regul_param=regul_param, inercia=inercia)
+                # calculating the weights and biases changes by doing the backprop
+                self.backprop(n, activations, zs, batch_Y,
+                    learning_rate, regul_param=regul_param, inercia=inercia)
+                # the full gradients are sums of minibatch gradients
+                # gradient_B = [gB + mgB for gB, mgB in zip(gradient_B, mini_gradient_B)]
+                # gradient_W = [gW + mgW for gW, mgW in zip(gradient_W, mini_gradient_W)]
                 output_activations.append(activations[-1])
 
             acc, cost = self.monitor(epoch + 1, train_data, regul_param, valid_data=valid_data)
@@ -119,20 +125,29 @@ class NeuralNetwork:
         """
         n is the size of full training set
 
-        cost = MSR(Ak)  Ak = s(Zk)          Zk = Wkj x Aj + Bk           ->
-        dAk  = Y - Ak   dZk = dAk * s'(Zk)  dWkj = dZk.T x Aj, dBk = dZk, dAj = dZk x Wkj
+        cost = MSR(Ak)
+        Ak = s(Zk)
+        Zk = Wkj x Aj + Bk
+        dAk = Y - Ak  # cross-entropy cost derivative
+        dZk = dAk * s'(Zk)
+        dWkj = dZk.T x Aj
+        dBk = dZk
+        dAj = dZk x Wkj
         """
         m = train_Y.shape[1]
         # m is the size of mini-batch training set
 
-        # collecting dW and dB
+        # Collecting dW and dB
         dW = [0] * (len(self.layer_sizes) - 1)
         dB = [0] * (len(self.layer_sizes) - 1)
-
-        dZk = activations[-1] - train_Y  # cross-entropy cost
+        # iterating over the layers, where the layers are indexed by j and k.
+        # the derivative is a bit differrent for the last layer, so calculating it outside of the loop
         dAk = None
-        for k, Zk, Ak, Aj in reversed(list(zip(itertools.count(), zs, activations[1:], activations[:-1]))):
-            if dZk is None:
+        dZk = activations[-1] - train_Y  # cross-entropy cost derivative
+        for k, Zk, Ak, Aj in reversed(list(zip(
+                itertools.count(), zs, activations[1:], activations[:-1]
+        ))):
+            if dAk is not None:  # not the first loop
                 dZk = dAk * sigmoid_prime(Zk)
 
             dW[k] = np.dot(dZk, Aj.T) / m   # (k_layer_size, m) x (j_layer_size, m).T -> (k_ls, j_ls)
@@ -141,11 +156,11 @@ class NeuralNetwork:
             dAj = np.dot(self.weights[k].T, dZk)  # (j_ls, k_ls) x (k_ls, m) -> (j_ls, m)
             # moving to the next layer
             dAk = dAj
-            dZk = None
 
-        # updating weights and b iases
+        # Updating weights and biases
         for k, Mk, Wk, Bk, dWk, dBk, in reversed(list(zip(
-                itertools.count(), self.momentums, self.weights, self.biases, dW, dB))):
+                itertools.count(), self.momentums, self.weights, self.biases, dW, dB
+        ))):
             # for Vk, Wk, Bk, dWk, dBk in zip(self.velocities, self.weights, self.biases, dW, dB):
             #     self.velocities[k] = friction * self.velocities[k] - learning_rate * dW[k]
             #     self.weights[k] += self.velocities[k]
@@ -158,6 +173,7 @@ class NeuralNetwork:
             self.momentums[k] = Mk
             self.weights[k] = Wk
             self.biases[k] = Bk
+
 
 def sigmoid(x):
     return 1/(1 + np.exp(-x))
