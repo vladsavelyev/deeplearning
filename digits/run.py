@@ -5,11 +5,13 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import plotly_express as px
-import plotly
-show = plotly.offline.plot
+import plotly as py
+import plotly.graph_objs as go
+from plotly.tools import make_subplots
+show = py.offline.plot
 from digits.load_data import load_mnist, load_toy2, get_Y, get_X, load_toy, collapse_digits, make_data
 from digits.simple_model import NeuralNetwork, evaluate
-import seaborn as sns
+import timeit
 
 np.set_string_function(lambda a: str(a.shape), repr=False)
 
@@ -48,29 +50,66 @@ print('Loading data...')
 Y_classes, train, test, valid = load_mnist()
 
 
-df = pd.DataFrame(dict(epoch=[], cost=[], acc=[], key=[]))
-
 all_hparams = [
-    # dict(inercia=0.04, subset=5000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=1),
-    # dict(inercia=0.04, subset=1000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=0.01, early_stop=1),
-    dict(inercia=0.04, subset=1000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=1.0, early_stop=1),
-    # dict(inercia=0.04, subset=1000, hidden_layers=(100,), epochs=100, learning_rate=0.5, batch_max_size=10, regul_param=5.0, early_stop=1),
+    dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0, batch_max_size=10, regul_param=1.0, early_stop=1),
+    dict(inercia=0.01, subset=5000, hidden_layers=(100,), epochs=100, learning_rate=3.0, batch_max_size=10, regul_param=1.0, early_stop=1),
+    dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=1.0, batch_max_size=10, regul_param=1.0, early_stop=1),
+    dict(inercia=0.01, subset=1000, hidden_layers=(30,),  epochs=100, learning_rate=3.0, batch_max_size=10, regul_param=1.0, early_stop=1),
+    dict(inercia=0,    subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0, batch_max_size=10, regul_param=1.0, early_stop=1),
 ]
+# the best results achieved with:
+#   inercia=0.01, subset=5000, learning_rate=3.0, hidden_layers=100
+#   inercia=0.01, subset=5000, learning_rate=1.0, hidden_layers=30
+# however learning_rate=1.0, hidden_layers=30 is faster
+# inercia doesn't affect accuracy, only run time
+eval_results = []
+all_nns = []
+labels = []
+runtimes = []
+test_accs = []
 for hparams in all_hparams:
-    key = {k: v for k, v in hparams.items() if len(list(set(d[k] for d in all_hparams))) > 1}
-    key = ', '.join(f'{k}: {v}' for k, v in key.items())
-    nn, (accs, costs) = NeuralNetwork.run(train, valid_data=valid, **hparams)
-    df = df.append(pd.DataFrame(dict(epoch=range(len(costs)), cost=costs, acc=accs, key=key)))
+    def _train_nn():
+        nn, (accs, costs) = NeuralNetwork.run(train, valid_data=valid, **hparams)
+        all_nns.append(nn)
+        eval_results.append(dict(epoch=list(range(len(costs))), cost=costs, acc=accs))
+
+    unique_params = {k: v for k, v in hparams.items() if len(list(set(d[k] for d in all_hparams))) > 1}
+    label = ', '.join(f'{k}: {v}' for k, v in unique_params.items())
+    labels.append(label)
+
+    time = timeit.timeit(lambda: _train_nn(), number=1)
+    runtimes.append(time)
 
     # Evaluating on test data:
+    nn = all_nns[-1]
     pred_Y = nn.predict(get_X(test))
-    acc = evaluate(pred_Y, get_Y(test), Y_classes)
-    print(f'Accuracy on test data: {acc}')
+    test_acc = evaluate(pred_Y, get_Y(test), Y_classes)
+    test_accs.append(test_acc)
+
+    print(f'Finished running with params {label}, run time: {time:.1f}, test data accuracy: {test_acc}')
     print()
 
-cmn_params = {k: v for k, v in all_hparams[0].items() if len(list(set(d[k] for d in all_hparams))) == 1}
-cmn_params = [f'{k}: {v}' for k, v in cmn_params.items()]
-show(px.line(df, x='epoch', y='acc', color='key', title=', '.join(cmn_params)))
+common_params = {k: v for k, v in all_hparams[0].items() if len(list(set(d[k] for d in all_hparams))) == 1}
+common_params = [f'{k}: {v}' for k, v in common_params.items()]
+
+# df = pd.DataFrame(dict(epoch=[], cost=[], acc=[], key=[]))
+# for res in eval_results:
+#     df = df.append(pd.DataFrame(res))
+# px.line(df, x='epoch', y='acc', color='key', title=', '.join(common_params))
+
+fig = make_subplots(rows=2, cols=1, subplot_titles=[', '.join(common_params), ''])
+for label, res in zip(labels, eval_results):
+    fig.add_trace(go.Scatter(x=res['epoch'], y=res['acc'], name=label, mode='lines+markers'),
+                  row=1, col=1)
+fig.add_trace(go.Bar(x=labels, y=runtimes),
+              row=2, col=1)
+# fig.update_layout(legend=dict(
+#     yanchor="bottom",
+#     xanchor="right",
+# ))
+show(fig)
+
+
 
 
 # Y_classes, train, test, valid = load_toy()
