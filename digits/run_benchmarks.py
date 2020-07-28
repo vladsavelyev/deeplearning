@@ -9,41 +9,16 @@ import plotly_express as px
 import plotly as py
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
-show = py.offline.plot
-from digits.load_data import load_mnist, get_Y, get_X, load_toy, \
-    load_toy2, collapse_digits, make_data
-from digits.simple_model import NeuralNetwork, evaluate
-from digits.theano_play import run as run_theano_play
+from digits.load_data import load_mnist, get_Y, get_X, \
+    load_toy, load_toy2, collapse_digits, make_data, evaluate
 
 np.set_string_function(lambda a: str(a.shape), repr=False)
 np.random.seed(1)
 
 
-def main():
-    all_hparams = [
-        # dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
-        #      batch_max_size=10, regul_param=1.0, early_stop=1),
-        dict(inercia=0.01, subset=5000, hidden_layers=(100,), epochs=100, learning_rate=3.0,
-             batch_max_size=10, regul_param=1.0, early_stop=1),
-        dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=1.0,
-             batch_max_size=10, regul_param=1.0, early_stop=1),
-        # dict(inercia=0.01, subset=1000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
-        #      batch_max_size=10, regul_param=1.0, early_stop=1),
-        # dict(inercia=0,    subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
-        #      batch_max_size=10, regul_param=1.0, early_stop=1),
-    ]
-    # the best results achieved with:
-    #   inercia=0.01, subset=5000, learning_rate=3.0, hidden_layers=100
-    #   inercia=0.01, subset=5000, learning_rate=1.0, hidden_layers=30
-    # however learning_rate=1.0, hidden_layers=30 is faster
-    # inercia doesn't affect accuracy, only run time
-    # run_benchmarks(NeuralNetwork.run, all_hparams)
-    run_benchmarks(run_theano_play, all_hparams)
-
-
 def run_benchmarks(run_fn, all_hparams):
     print('Loading data...')
-    Y_classes, train, test, valid = load_mnist()
+    y_classes, train_data, test_data, validation_data = load_mnist()
 
     eval_results = []
     all_nns = []
@@ -51,8 +26,8 @@ def run_benchmarks(run_fn, all_hparams):
     runtimes = []
     test_accs = []
     for hparams in all_hparams:
-        def _train_nn():
-            nn, (accs, costs) = run_fn(train, valid_data=valid, **hparams)
+        def _benchmark_training():
+            nn, (accs, costs) = run_fn(train_data, valid_data=validation_data, **hparams)
             all_nns.append(nn)
             eval_results.append(dict(epoch=list(range(len(costs))), cost=costs, acc=accs))
 
@@ -61,13 +36,13 @@ def run_benchmarks(run_fn, all_hparams):
         label = ', '.join(f'{k}: {v}' for k, v in unique_params.items())
         labels.append(label)
 
-        time = timeit.timeit(lambda: _train_nn(), number=1)
+        time = timeit.timeit(lambda: _benchmark_training(), number=1)
         runtimes.append(time)
 
         # Evaluating on test data:
         nn = all_nns[-1]
-        pred_Y = nn.predict(get_X(test))
-        test_acc = evaluate(pred_Y, get_Y(test), Y_classes)
+        pred_Y = nn.predict(get_X(test_data))
+        test_acc = evaluate(pred_Y, get_Y(test_data), y_classes)
         test_accs.append(test_acc)
 
         print(f'Finished running with params {label}, run time: {time:.1f}, '
@@ -83,13 +58,14 @@ def run_benchmarks(run_fn, all_hparams):
     #     df = df.append(pd.DataFrame(res))
     # px.line(df, x='epoch', y='acc', color='key', title=', '.join(common_params))
 
-    fig = make_subplots(rows=2, cols=1, subplot_titles=[', '.join(common_params), 'Run times'],
+    fig = make_subplots(rows=2, cols=1,
+                        subplot_titles=[', '.join(common_params), 'Run times'],
                         row_heights=[3, 1])
     for label, res in zip(labels, eval_results):
         fig.add_scatter(x=res['epoch'], y=res['acc'], name=label, mode='lines+markers',
                         row=1, col=1)
     fig.add_bar(x=labels, y=runtimes, row=2, col=1, )
-    show(fig)
+    py.offline.plot(fig)
 
     # Y_classes, train, test, valid = load_toy()
     # hidden_layers = [8]
@@ -161,9 +137,6 @@ def explore_0layer_nn(test_data, nn):
 
     show_images(np.concatenate(plots, axis=1), cols=4)
 
-
-if __name__ == '__main__':
-    main()
 
 
 

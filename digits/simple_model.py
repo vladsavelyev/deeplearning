@@ -3,12 +3,32 @@ import json
 import math
 import numpy as np
 
+from digits import NeuralNetwork
 from digits.load_data import get_X, get_Y, evaluate, collapse_digits
+from digits.run_benchmarks import run_benchmarks
 
 
-class NeuralNetwork:
+def main():
+    all_hparams = [
+        # dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
+        #      batch_max_size=10, regul_param=1.0, early_stop=1),
+        dict(inercia=0.01, subset=5000, hidden_layers=(100,), epochs=100, learning_rate=3.0,
+             batch_max_size=10, regul_param=1.0, early_stop=1),
+        dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=1.0,
+             batch_max_size=10, regul_param=1.0, early_stop=1),
+        # dict(inercia=0.01, subset=1000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
+        #      batch_max_size=10, regul_param=1.0, early_stop=1),
+        # dict(inercia=0,    subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
+        #      batch_max_size=10, regul_param=1.0, early_stop=1),
+    ]
+    """
+    - the best results achieved with:
+      inercia=0.01, subset=5000, learning_rate=3.0, hidden_layers=100
+      inercia=0.01, subset=5000, learning_rate=1.0, hidden_layers=30
+    - however learning_rate=1.0, hidden_layers=30 is faster
+    - inercia doesn't affect accuracy, only the runtime
+    """
 
-    @staticmethod
     def run(train_data, valid_data, **hparams):
         hparams = hparams.copy()
         print(f'Training the NN with hyperparams {hparams}')
@@ -20,10 +40,16 @@ class NeuralNetwork:
             layers.extend(hparams.pop('hidden_layers'))
         layers.append(get_Y(train_data).shape[0])
 
-        nn = NeuralNetwork(layers)
-        return nn, nn.learn(np.copy(train_data), valid_data=valid_data, **hparams)
+        nn = SimpleNeuralNetwork(layers)
+        accuracies, costs = nn.learn(np.copy(train_data), valid_data=valid_data, **hparams)
+        return nn, accuracies, costs
 
-    def __init__(self, layer_sizes):
+    run_benchmarks(run, all_hparams)
+
+
+class SimpleNeuralNetwork(NeuralNetwork):
+    def __init__(self, layer_sizes, **hparams):
+        super().__init__(**hparams)
         np.random.seed(2)
         self.layer_sizes = layer_sizes
         self.weights = [np.random.randn(k, j) / np.sqrt(j)
@@ -50,12 +76,12 @@ class NeuralNetwork:
         return activations, zs
 
     @staticmethod
-    def _predict(A):
+    def _activations_to_y(A):
         return collapse_digits(A)
 
     def predict(self, X):
         activations, _ = self.feedforward(X)
-        return self._predict(activations[-1])
+        return self._activations_to_y(activations[-1])
 
     def learn(self, train_data, valid_data=None, epochs=100, learning_rate=3.0, batch_max_size=10,
               regul_param=0.01, early_stop=10, inercia=1.0):
@@ -65,7 +91,7 @@ class NeuralNetwork:
         n_batches = math.ceil(n / batch_max_size)
         batch_size = math.ceil(n / n_batches)
 
-        accs = []
+        accuracies = []
         costs = []
         ini_learning_rate = learning_rate
         np.random.seed(3)
@@ -91,10 +117,10 @@ class NeuralNetwork:
 
             acc, cost = self.monitor(epoch + 1, train_data, regul_param, valid_data=valid_data)
             costs.append(cost)
-            accs.append(acc)
+            accuracies.append(acc)
             if early_stop and \
-                    len(accs) > early_stop and \
-                    all(acc < a for a in accs[-early_stop-1:-1]):
+                    len(accuracies) > early_stop and \
+                    all(acc < a for a in accuracies[-early_stop-1:-1]):
                 learning_rate /= 2
                 print(f'Decreasing learning rate to {learning_rate}')
                 if learning_rate < ini_learning_rate/128:
@@ -102,7 +128,7 @@ class NeuralNetwork:
                           f'stopping at epoch {epoch}')
                     break
 
-        return accs, costs
+        return accuracies, costs
 
     def monitor(self, epoch_n, train_data, regul_param, valid_data=None):
         print(f"Epoch {epoch_n}", end='')
