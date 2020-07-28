@@ -28,8 +28,7 @@ def main():
     - however learning_rate=1.0, hidden_layers=30 is faster
     - inercia doesn't affect accuracy, only the runtime
     """
-
-    def run(train_data, valid_data, **hparams):
+    def make_nn(train_data, **hparams):
         hparams = hparams.copy()
         print(f'Training the NN with hyperparams {hparams}')
         if 'subset' in hparams:
@@ -40,16 +39,20 @@ def main():
             layers.extend(hparams.pop('hidden_layers'))
         layers.append(get_Y(train_data).shape[0])
 
-        nn = SimpleNeuralNetwork(layers)
-        accuracies, costs = nn.learn(np.copy(train_data), valid_data=valid_data, **hparams)
-        return nn, accuracies, costs
+        return SimpleNeuralNetwork(layers, **hparams)
 
-    run_benchmarks(run, all_hparams)
+    run_benchmarks(make_nn, all_hparams)
 
 
 class SimpleNeuralNetwork(NeuralNetwork):
-    def __init__(self, layer_sizes, **hparams):
-        super().__init__(**hparams)
+    def __init__(self, layer_sizes,
+                 epochs=100,
+                 learning_rate=3.0,
+                 batch_max_size=10,
+                 regul_param=0.01,
+                 early_stop=10,
+                 inercia=1.0):
+        super().__init__()
         np.random.seed(2)
         self.layer_sizes = layer_sizes
         self.weights = [np.random.randn(k, j) / np.sqrt(j)
@@ -57,6 +60,13 @@ class SimpleNeuralNetwork(NeuralNetwork):
         self.momentums = [np.ones(w.shape) for w in self.weights]
         self.biases = [np.random.randn(k, 1)
                        for k in layer_sizes[1:]]
+
+        self.epochs = epochs
+        self.learning_rate = learning_rate
+        self.batch_max_size = batch_max_size
+        self.regul_param = regul_param
+        self.early_stop = early_stop
+        self.inercia = inercia
 
     def feedforward(self, X):
         A = X  # activation of the zero'th layer = input layer, shape = (i'th, m)
@@ -83,19 +93,17 @@ class SimpleNeuralNetwork(NeuralNetwork):
         activations, _ = self.feedforward(X)
         return self._activations_to_y(activations[-1])
 
-    def learn(self, train_data, valid_data=None, epochs=100, learning_rate=3.0, batch_max_size=10,
-              regul_param=0.01, early_stop=10, inercia=1.0):
-
+    def learn(self, train_data, validation_data=None):
         # Partition into smaller batches
         n = train_data.shape[0]
-        n_batches = math.ceil(n / batch_max_size)
+        n_batches = math.ceil(n / self.batch_max_size)
         batch_size = math.ceil(n / n_batches)
 
         accuracies = []
         costs = []
-        ini_learning_rate = learning_rate
+        ini_learning_rate = self.learning_rate
         np.random.seed(3)
-        for epoch in range(epochs):
+        for epoch in range(self.epochs):
             np.random.shuffle(train_data)
             batches = [train_data[bn*batch_size:(bn+1)*batch_size] for bn in range(n_batches)]
 
@@ -109,28 +117,28 @@ class SimpleNeuralNetwork(NeuralNetwork):
                 activations, zs = self.feedforward(batch_X)
                 # calculating the weights and biases changes by doing the backprop
                 self.backprop(n, activations, zs, batch_Y,
-                    learning_rate, regul_param=regul_param, inercia=inercia)
+                    self.learning_rate, regul_param=self.regul_param, inercia=self.inercia)
                 # the full gradients are sums of minibatch gradients
                 # gradient_B = [gB + mgB for gB, mgB in zip(gradient_B, mini_gradient_B)]
                 # gradient_W = [gW + mgW for gW, mgW in zip(gradient_W, mini_gradient_W)]
                 output_activations.append(activations[-1])
 
-            acc, cost = self.monitor(epoch + 1, train_data, regul_param, valid_data=valid_data)
+            acc, cost = self.monitor(epoch + 1, train_data, self.regul_param,
+                                     validation_data=validation_data)
             costs.append(cost)
             accuracies.append(acc)
-            if early_stop and \
-                    len(accuracies) > early_stop and \
-                    all(acc < a for a in accuracies[-early_stop-1:-1]):
-                learning_rate /= 2
-                print(f'Decreasing learning rate to {learning_rate}')
-                if learning_rate < ini_learning_rate/128:
-                    print(f'Learning rate dropped down to {learning_rate}<{ini_learning_rate}/128,'
+            if self.early_stop and \
+                    len(accuracies) > self.early_stop and \
+                    all(acc < a for a in accuracies[-self.early_stop-1:-1]):
+                self.learning_rate /= 2
+                print(f'Decreasing learning rate to {self.learning_rate}')
+                if self.learning_rate < ini_learning_rate/128:
+                    print(f'Learning rate dropped down to {self.learning_rate}<{ini_learning_rate}/128,'
                           f'stopping at epoch {epoch}')
                     break
-
         return accuracies, costs
 
-    def monitor(self, epoch_n, train_data, regul_param, valid_data=None):
+    def monitor(self, epoch_n, train_data, regul_param, validation_data=None):
         print(f"Epoch {epoch_n}", end='')
         cost = None
         acc = None
@@ -140,9 +148,9 @@ class SimpleNeuralNetwork(NeuralNetwork):
         cost = regularized_cost(activations[-1], y, self.weights, regul_param=regul_param)
         print(f", cost: {cost}", end='')
 
-        if valid_data is not None:
-            val_X = get_X(valid_data)
-            val_Y = get_Y(valid_data)
+        if validation_data is not None:
+            val_X = get_X(validation_data)
+            val_Y = get_Y(validation_data)
             Y_classes = get_Y(train_data).shape[0]
             predictions = self.predict(val_X)
             acc = evaluate(predictions, val_Y, Y_classes)
@@ -255,3 +263,6 @@ def load_nn(fpath):
     net.biases = [np.array(b) for b in data['biases']]
     return net
 
+
+if __name__ == '__main__':
+    main()

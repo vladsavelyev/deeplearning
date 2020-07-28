@@ -16,20 +16,20 @@ np.set_string_function(lambda a: str(a.shape), repr=False)
 np.random.seed(1)
 
 
-def run_benchmarks(run_fn, all_hparams):
+def run_benchmarks(make_nn_fn, all_hparams):
     print('Loading data...')
     y_classes, train_data, test_data, validation_data = load_mnist()
 
     eval_results = []
-    all_nns = []
     labels = []
     runtimes = []
     test_accs = []
     for hparams in all_hparams:
+        nn = make_nn_fn(train_data, **hparams)
+
         def _benchmark_training():
-            nn, (accs, costs) = run_fn(train_data, valid_data=validation_data, **hparams)
-            all_nns.append(nn)
-            eval_results.append(dict(epoch=list(range(len(costs))), cost=costs, acc=accs))
+            accuracies, costs = nn.learn(np.copy(train_data), validation_data=validation_data)
+            eval_results.append(dict(epoch=list(range(len(costs))), cost=costs, acc=accuracies))
 
         unique_params = {k: v for k, v in hparams.items()
                          if len(list(set(d[k] for d in all_hparams))) > 1}
@@ -40,7 +40,6 @@ def run_benchmarks(run_fn, all_hparams):
         runtimes.append(time)
 
         # Evaluating on test data:
-        nn = all_nns[-1]
         pred_Y = nn.predict(get_X(test_data))
         test_acc = evaluate(pred_Y, get_Y(test_data), y_classes)
         test_accs.append(test_acc)
