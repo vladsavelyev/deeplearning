@@ -12,11 +12,14 @@ class NeuralNetwork:
     def run(train_data, valid_data, **hparams):
         hparams = hparams.copy()
         print(f'Training the NN with hyperparams {hparams}')
-        train_data = train_data[:hparams.pop('subset')]
+        if 'subset' in hparams:
+            train_data = train_data[:hparams.pop('subset')]
+
         layers = [get_X(train_data).shape[0]]
         if 'hidden_layers' in hparams:
             layers.extend(hparams.pop('hidden_layers'))
         layers.append(get_Y(train_data).shape[0])
+
         nn = NeuralNetwork(layers)
         return nn, nn.learn(np.copy(train_data), valid_data=valid_data, **hparams)
 
@@ -54,7 +57,7 @@ class NeuralNetwork:
         activations, _ = self.feedforward(X)
         return self._predict(activations[-1])
 
-    def learn(self, train_data, valid_data=None, epochs=100, learning_rate=0.01, batch_max_size=10,
+    def learn(self, train_data, valid_data=None, epochs=100, learning_rate=3.0, batch_max_size=10,
               regul_param=0.01, early_stop=10, inercia=1.0):
 
         # Partition into smaller batches

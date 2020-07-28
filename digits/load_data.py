@@ -1,5 +1,7 @@
 import gzip
 import pickle
+from os.path import dirname, join
+
 import numpy as np
 
 
@@ -11,15 +13,19 @@ def load_mnist():
         test_X.shape = (10000, 784)
         test_Y.shape = (10000, 1)
     """
-    path = '/Users/vsaveliev/git/vladsaveliev/neural-networks-and-deep-learning/DeepLearningPython35/mnist.pkl.gz'
+    path = join(dirname(__file__), 'mnist.pkl.gz')
     with gzip.open(path, 'rb') as f:
-        (train_X, train_Y), (valid_X, valid_Y), (test_X, test_Y) = pickle.load(f, encoding='bytes')
+        (train_X, train_Y), (valid_X, valid_Y), (test_X, test_Y) = \
+            pickle.load(f, encoding='bytes')
 
     Y_classes = 10
     train_Y = expand_digits(train_Y, Y_classes)
     test_Y = expand_digits(test_Y, Y_classes)
     valid_Y = expand_digits(valid_Y, Y_classes)
-    return Y_classes, make_data(train_X, train_Y), make_data(test_X, test_Y), make_data(valid_X, valid_Y)
+    return Y_classes, \
+           make_data(train_X, train_Y), \
+           make_data(test_X, test_Y), \
+           make_data(valid_X, valid_Y)
 
 
 def load_toy():
@@ -176,7 +182,8 @@ def get_Y_flat(data):
     # assuming data is an array of tuples of shape (m, 2).
     # extracing array of Xs of size (m, 1), and recombining elements into
     # an array of size (1, m) again using np.stack
-    # the difference with get_Y is that it returns 1-dimentional Ys containing 1 digit 0-9
+    # the difference with get_Y is that it returns 1-dimentional
+    # Ys containing 1 digit 0-9
     return np.stack(data[:, 1]).T
 
 
