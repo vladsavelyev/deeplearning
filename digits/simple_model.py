@@ -1,6 +1,7 @@
 import itertools
 import json
 import math
+import sys
 import numpy as np
 
 from digits import NeuralNetwork
@@ -39,34 +40,28 @@ def main():
             layers.extend(hparams.pop('hidden_layers'))
         layers.append(get_Y(train_data).shape[0])
 
-        return SimpleNeuralNetwork(layers, **hparams)
+        return SimpleNeuralNetwork(layers, hparams)
 
     run_benchmarks(make_nn, all_hparams)
 
 
 class SimpleNeuralNetwork(NeuralNetwork):
-    def __init__(self, layer_sizes,
-                 epochs=100,
-                 learning_rate=3.0,
-                 batch_max_size=10,
-                 regul_param=0.01,
-                 early_stop=10,
-                 inercia=1.0):
-        super().__init__()
-        np.random.seed(2)
+    def __init__(self, layer_sizes, hparams):
+        super().__init__(hparams)
+        self.epochs = hparams.get('epochs', 100)
+        self.learning_rate = hparams.get('learning_rate', 3.0)
+        self.batch_max_size = hparams.get('batch_max_size', 10)
+        self.regul_param = hparams.get('regul_param', 0.01)
+        self.early_stop = hparams.get('early_stop', 10)
+        self.inercia = hparams.get('inercia', 1.0)
+
         self.layer_sizes = layer_sizes
+        np.random.seed(2)
         self.weights = [np.random.randn(k, j) / np.sqrt(j)
                         for j, k in zip(layer_sizes[:-1], layer_sizes[1:])]
         self.momentums = [np.ones(w.shape) for w in self.weights]
         self.biases = [np.random.randn(k, 1)
                        for k in layer_sizes[1:]]
-
-        self.epochs = epochs
-        self.learning_rate = learning_rate
-        self.batch_max_size = batch_max_size
-        self.regul_param = regul_param
-        self.early_stop = early_stop
-        self.inercia = inercia
 
     def feedforward(self, X):
         A = X  # activation of the zero'th layer = input layer, shape = (i'th, m)
@@ -94,6 +89,10 @@ class SimpleNeuralNetwork(NeuralNetwork):
         return self._activations_to_y(activations[-1])
 
     def learn(self, train_data, validation_data=None):
+        if validation_data is None and self.early_stop:
+            sys.stderr.write('When early_stop is set, validation data must be provided\n')
+            sys.exit(1)
+
         # Partition into smaller batches
         n = train_data.shape[0]
         n_batches = math.ceil(n / self.batch_max_size)
@@ -105,18 +104,16 @@ class SimpleNeuralNetwork(NeuralNetwork):
         np.random.seed(3)
         for epoch in range(self.epochs):
             np.random.shuffle(train_data)
-            batches = [train_data[bn*batch_size:(bn+1)*batch_size] for bn in range(n_batches)]
 
             # gradient_B = [np.zeros(b.shape) for b in self.biases]
             # gradient_W = [np.zeros(w.shape) for w in self.weights]
             output_activations = []
             # calculating the gradient by summing over minibatches backprops
-            for batch in batches:
-                batch_X = get_X(batch)
-                batch_Y = get_Y(batch)
-                activations, zs = self.feedforward(batch_X)
+            for batch_i in range(n_batches):
+                batch = train_data[batch_i * batch_size: (batch_i + 1) * batch_size]
+                activations, zs = self.feedforward(get_X(batch))
                 # calculating the weights and biases changes by doing the backprop
-                self.backprop(n, activations, zs, batch_Y,
+                self.backprop(n, activations, zs, get_Y(batch),
                     self.learning_rate, regul_param=self.regul_param, inercia=self.inercia)
                 # the full gradients are sums of minibatch gradients
                 # gradient_B = [gB + mgB for gB, mgB in zip(gradient_B, mini_gradient_B)]
@@ -149,16 +146,16 @@ class SimpleNeuralNetwork(NeuralNetwork):
         print(f", cost: {cost}", end='')
 
         if validation_data is not None:
-            val_X = get_X(validation_data)
-            val_Y = get_Y(validation_data)
-            Y_classes = get_Y(train_data).shape[0]
-            predictions = self.predict(val_X)
-            acc = evaluate(predictions, val_Y, Y_classes)
+            val_x = get_X(validation_data)
+            val_y = get_Y(validation_data)
+            num_y_classes = get_Y(train_data).shape[0]
+            predictions = self.predict(val_x)
+            acc = evaluate(predictions, val_y, num_y_classes)
             print(f", accuracy: {acc}", end='')
         print()
         return acc, cost
 
-    def backprop(self, n, activations, zs, train_Y, learning_rate, regul_param, inercia):
+    def backprop(self, n, activations, zs, train_y, learning_rate, regul_param, inercia):
         """
         n is the size of full training set
 
@@ -171,7 +168,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
         dBk = dZk
         dAj = dZk x Wkj
         """
-        m = train_Y.shape[1]
+        m = train_y.shape[1]
         # m is the size of mini-batch training set
 
         # Collecting dW and dB
@@ -180,7 +177,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
         # iterating over the layers, where the layers are indexed by j and k.
         # the derivative is a bit differrent for the last layer, so calculating it outside of the loop
         dAk = None
-        dZk = activations[-1] - train_Y  # cross-entropy cost derivative
+        dZk = activations[-1] - train_y  # cross-entropy cost derivative
         for k, Zk, Ak, Aj in reversed(list(zip(
                 itertools.count(), zs, activations[1:], activations[:-1]
         ))):
@@ -212,6 +209,31 @@ class SimpleNeuralNetwork(NeuralNetwork):
             self.biases[k] = Bk
 
 
+    def save_nn(self, fpath):
+        """ Save the neural network to the file `fpath`
+        """
+        data = {
+            "sizes": self.layer_sizes,
+            "weights": [w.tolist() for w in self.weights],
+            "biases": [b.tolist() for b in self.biases],
+        }
+        with open(fpath, 'w') as f:
+            json.dump(data, f)
+
+    @staticmethod
+    def load_nn(self, fpath):
+        """ Load a neural network from the file `fpath`.
+            Returns an instance of NeuralNetwork.
+        """
+        with open(fpath) as f:
+            data = json.load(f)
+
+        net = SimpleNeuralNetwork(data['sizes'])
+        net.weights = [np.array(w) for w in data['weights']]
+        net.biases = [np.array(b) for b in data['biases']]
+        return net
+
+
 def sigmoid(x):
     return 1/(1 + np.exp(-x))
 
@@ -238,30 +260,6 @@ def regularized_cost(a, y, weights, regul_param):
     n = a.shape[0]
     regularization = 0.5 * (regul_param / n) * sum(np.linalg.norm(w) ** 2 for w in weights)
     return cost + regularization
-
-
-def save_nn(nn: NeuralNetwork, fpath):
-    """ Save the neural network to the file `fpath`
-    """
-    data = {"sizes": nn.layer_sizes,
-            "weights": [w.tolist() for w in nn.weights],
-            "biases": [b.tolist() for b in nn.biases],
-            }
-    with open(fpath, 'w') as f:
-        json.dump(data, f)
-
-
-def load_nn(fpath):
-    """ Load a neural network from the file `fpath`.
-        Returns an instance of NeuralNetwork.
-    """
-    with open(fpath) as f:
-        data = json.load(f)
-
-    net = NeuralNetwork(data['sizes'])
-    net.weights = [np.array(w) for w in data['weights']]
-    net.biases = [np.array(b) for b in data['biases']]
-    return net
 
 
 if __name__ == '__main__':

@@ -4,7 +4,6 @@ import random
 import timeit
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import plotly_express as px
 import plotly as py
 import plotly.graph_objs as go
@@ -18,7 +17,7 @@ np.random.seed(1)
 
 def run_benchmarks(make_nn_fn, all_hparams):
     print('Loading data...')
-    y_classes, train_data, test_data, validation_data = load_mnist()
+    y_classes, train_data, test_data, validation_data = load_toy()
 
     eval_results = []
     labels = []
@@ -28,7 +27,7 @@ def run_benchmarks(make_nn_fn, all_hparams):
         nn = make_nn_fn(train_data, **hparams)
 
         def _benchmark_training():
-            accuracies, costs = nn.learn(np.copy(train_data), validation_data=validation_data)
+            accuracies, costs = nn.learn(train_data, validation_data=validation_data)
             eval_results.append(dict(epoch=list(range(len(costs))), cost=costs, acc=accuracies))
 
         unique_params = {k: v for k, v in hparams.items()

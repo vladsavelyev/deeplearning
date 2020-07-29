@@ -1,8 +1,9 @@
 import gzip
 import pickle
 from os.path import dirname, join
-
 import numpy as np
+import theano
+import theano.tensor as T
 
 
 def load_mnist():
@@ -19,9 +20,9 @@ def load_mnist():
             pickle.load(f, encoding='bytes')
 
     Y_classes = 10
-    train_Y = expand_digits(train_Y, Y_classes)
-    test_Y = expand_digits(test_Y, Y_classes)
-    valid_Y = expand_digits(valid_Y, Y_classes)
+    train_Y = digits_to_binary_arrays(train_Y, Y_classes)
+    test_Y = digits_to_binary_arrays(test_Y, Y_classes)
+    valid_Y = digits_to_binary_arrays(valid_Y, Y_classes)
     return Y_classes, \
            make_data(train_X, train_Y), \
            make_data(test_X, test_Y), \
@@ -29,7 +30,7 @@ def load_mnist():
 
 
 def load_toy():
-    Y_classes = 2
+    num_y_classes = 2
     train_X = np.array([
         [0,1,0,
          0,1,0,
@@ -55,7 +56,7 @@ def load_toy():
          1,0,1,
          0,1,0],
     ])
-    train_Y = expand_digits([1,1,1,0,0,0], Y_classes)
+    train_Y = digits_to_binary_arrays([1, 1, 1, 0, 0, 0], num_y_classes)
 
     test_X = np.array([
         [0,1,1,
@@ -86,12 +87,15 @@ def load_toy():
          1,1,1,
          0,1,1],
     ])
-    test_Y = expand_digits([1,1,1,1,0,0,0], Y_classes)
-    return Y_classes, make_data(train_X, train_Y), make_data(test_X, test_Y), None
+    test_Y = digits_to_binary_arrays([1, 1, 1, 1, 0, 0, 0], num_y_classes)
+    return num_y_classes, \
+           make_data(train_X, train_Y), \
+           make_data(test_X, test_Y), \
+           make_data(test_X, test_Y)
 
 
 def load_toy2():
-    Y_classes = 2
+    num_y_classes = 2
     train_X = np.array([
         [0,0,1,
          0,0,0,
@@ -117,7 +121,7 @@ def load_toy2():
          0,0,0,
          1,1,0],
     ])
-    train_Y = expand_digits([1,1,1,0,0,0], Y_classes)
+    train_Y = digits_to_binary_arrays([1, 1, 1, 0, 0, 0], num_y_classes)
 
     test_X = np.array([
         [0,1,1,
@@ -132,8 +136,11 @@ def load_toy2():
          0,0,0,
          1,0,0]
     ])
-    test_Y = expand_digits(np.array([1,1,0]), Y_classes)
-    return Y_classes, make_data(train_X, train_Y), make_data(test_X, test_Y), None
+    test_Y = digits_to_binary_arrays(np.array([1, 1, 0]), num_y_classes)
+    return num_y_classes, \
+           make_data(train_X, train_Y), \
+           make_data(test_X, test_Y), \
+           make_data(test_X, test_Y)
 
 
 def make_data(X, Y):
@@ -143,9 +150,9 @@ def make_data(X, Y):
     return np.array(list(zip(X, Y)))
 
 
-def expand_digits(Y, Y_classes):
+def digits_to_binary_arrays(Y, num_y_classes):
     # convert Y digits to 10-long arrays of 0 or 1
-    return np.array([[int(i == y) for i in range(Y_classes)] for y in Y])
+    return np.array([[int(i == y) for i in range(num_y_classes)] for y in Y])
 
 
 def collapse_digits(Y):
@@ -157,7 +164,7 @@ def evaluate(pred_Y, val_Y, Y_classes):
     """ assume pred_Y and test_Y are 1-dim arrays of integers 0 through 9
     """
     if len(pred_Y.shape) == 1:
-        pred_Y = expand_digits(pred_Y, Y_classes).T
+        pred_Y = digits_to_binary_arrays(pred_Y, Y_classes).T
     if val_Y.shape[0] > 1: val_Y = collapse_digits(val_Y)
     if pred_Y.shape[0] > 1: pred_Y = collapse_digits(pred_Y)
     assert pred_Y.shape == val_Y.shape, (pred_Y.shape, val_Y.shape)
