@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 from digits import NeuralNetwork
-from digits.load_data import get_X, get_Y, evaluate, collapse_digits
+from digits.load_data import get_X, get_Y, evaluate, binary_arrays_to_digits
 from digits.run_benchmarks import run_benchmarks
 
 
@@ -82,7 +82,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
 
     @staticmethod
     def _activations_to_y(A):
-        return collapse_digits(A)
+        return binary_arrays_to_digits(A)
 
     def predict(self, X):
         activations, _ = self.feedforward(X)

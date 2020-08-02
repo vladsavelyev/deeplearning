@@ -9,7 +9,7 @@ import plotly as py
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
 from digits.load_data import load_mnist, get_Y, get_X, \
-    load_toy, load_toy2, collapse_digits, make_data, evaluate
+    load_toy, load_toy2, binary_arrays_to_digits, zip_x_y, evaluate
 
 np.set_string_function(lambda a: str(a.shape), repr=False)
 np.random.seed(1)
@@ -17,17 +17,19 @@ np.random.seed(1)
 
 def run_benchmarks(make_nn_fn, all_hparams):
     print('Loading data...')
-    y_classes, train_data, test_data, validation_data = load_toy()
+    y_classes, training_data, test_data, validation_data = load_mnist()
+    training_x, training_y = training_data
+    test_x, test_y = test_data
 
     eval_results = []
     labels = []
     runtimes = []
     test_accs = []
     for hparams in all_hparams:
-        nn = make_nn_fn(train_data, **hparams)
+        nn = make_nn_fn(training_data, **hparams)
 
         def _benchmark_training():
-            accuracies, costs = nn.learn(train_data, validation_data=validation_data)
+            accuracies, costs = nn.learn(training_data, validation_data, test_data)
             eval_results.append(dict(epoch=list(range(len(costs))), cost=costs, acc=accuracies))
 
         unique_params = {k: v for k, v in hparams.items()
@@ -39,8 +41,7 @@ def run_benchmarks(make_nn_fn, all_hparams):
         runtimes.append(time)
 
         # Evaluating on test data:
-        pred_Y = nn.predict(get_X(test_data))
-        test_acc = evaluate(pred_Y, get_Y(test_data), y_classes)
+        test_acc = nn.accuracy(test_x, test_y)
         test_accs.append(test_acc)
 
         print(f'Finished running with params {label}, run time: {time:.1f}, '
@@ -119,7 +120,7 @@ def explore_0layer_nn(test_data, nn):
     # accuracy for each digit type
     plots = []
     for i in range(10):
-        y = collapse_digits(get_Y(test_data))
+        y = binary_arrays_to_digits(get_Y(test_data))
         yi = y[y == i]
         x = get_X(test_data).T
         xi = x[y == i].T

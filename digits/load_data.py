@@ -6,6 +6,27 @@ import theano
 import theano.tensor as T
 
 
+def shared_dataset(data_x, data_y):
+    """ Function that loads the dataset into shared variables
+
+    The reason we store our dataset in shared variables is to allow
+    Theano to copy it into the GPU memory (when code is run on GPU).
+    Since copying data into the GPU is slow, copying a minibatch everytime
+    is needed (the default behaviour if the data is not in a shared
+    variable) would lead to a large decrease in performance.
+    """
+    shared_x = theano.shared(np.asarray(data_x, dtype=theano.config.floatX))
+    shared_y = theano.shared(np.asarray(data_y, dtype=theano.config.floatX))
+    # When storing data on the GPU it has to be stored as floats
+    # therefore we will store the labels as ``floatX`` as well
+    # (``shared_y`` does exactly that). But during our computations
+    # we need them as ints (we use labels as index, and if they are
+    # floats it doesn't make sense) therefore instead of returning
+    # ``shared_y`` we will have to cast it to int. This little hack
+    # lets us get around this issue
+    return shared_x, shared_y
+
+
 def load_mnist():
     """ train_X.shape = (50000, 784)
         train_Y.shape = (50000, 1)
@@ -21,12 +42,12 @@ def load_mnist():
 
     Y_classes = 10
     train_Y = digits_to_binary_arrays(train_Y, Y_classes)
-    test_Y = digits_to_binary_arrays(test_Y, Y_classes)
+    test_Y  = digits_to_binary_arrays(test_Y, Y_classes)
     valid_Y = digits_to_binary_arrays(valid_Y, Y_classes)
     return Y_classes, \
-           make_data(train_X, train_Y), \
-           make_data(test_X, test_Y), \
-           make_data(valid_X, valid_Y)
+           shared_dataset(train_X, train_Y), \
+           shared_dataset(test_X, test_Y), \
+           shared_dataset(valid_X, valid_Y)
 
 
 def load_toy():
@@ -56,7 +77,7 @@ def load_toy():
          1,0,1,
          0,1,0],
     ])
-    train_Y = digits_to_binary_arrays([1, 1, 1, 0, 0, 0], num_y_classes)
+    train_Y = [1, 1, 1, 0, 0, 0]
 
     test_X = np.array([
         [0,1,1,
@@ -87,11 +108,14 @@ def load_toy():
          1,1,1,
          0,1,1],
     ])
-    test_Y = digits_to_binary_arrays([1, 1, 1, 1, 0, 0, 0], num_y_classes)
+    test_Y = [1, 1, 1, 1, 0, 0, 0]
+
+    train_Y = digits_to_binary_arrays(train_Y, num_y_classes)
+    test_Y = digits_to_binary_arrays(test_Y, num_y_classes)
     return num_y_classes, \
-           make_data(train_X, train_Y), \
-           make_data(test_X, test_Y), \
-           make_data(test_X, test_Y)
+           shared_dataset(train_X, train_Y), \
+           shared_dataset(test_X, test_Y), \
+           shared_dataset(test_X, test_Y)
 
 
 def load_toy2():
@@ -138,12 +162,12 @@ def load_toy2():
     ])
     test_Y = digits_to_binary_arrays(np.array([1, 1, 0]), num_y_classes)
     return num_y_classes, \
-           make_data(train_X, train_Y), \
-           make_data(test_X, test_Y), \
-           make_data(test_X, test_Y)
+           shared_dataset(train_X, train_Y), \
+           shared_dataset(test_X, test_Y), \
+           shared_dataset(test_X, test_Y)
 
 
-def make_data(X, Y):
+def zip_x_y(X, Y):
     # assuming X is an array of m training examples of k dimentions (shape = (m, k))
     # and Y is an array of m training examples of j dimentions (shape = (m, j))
     # making an array of tuples of shape (m, 2)
@@ -151,12 +175,12 @@ def make_data(X, Y):
 
 
 def digits_to_binary_arrays(Y, num_y_classes):
-    # convert Y digits to 10-long arrays of 0 or 1
+    # convert 0-9 digits into 10-long arrays of 0 or 1
     return np.array([[int(i == y) for i in range(num_y_classes)] for y in Y])
 
 
-def collapse_digits(Y):
-    # converts to the flat shape (array of digits 0-9)
+def binary_arrays_to_digits(Y):
+    # convert 10-long arrays of 0/1 into a flat shape (arrays of digits 0-9)
     return np.argmax(Y, axis=0)
 
 
@@ -165,8 +189,8 @@ def evaluate(pred_Y, val_Y, Y_classes):
     """
     if len(pred_Y.shape) == 1:
         pred_Y = digits_to_binary_arrays(pred_Y, Y_classes).T
-    if val_Y.shape[0] > 1: val_Y = collapse_digits(val_Y)
-    if pred_Y.shape[0] > 1: pred_Y = collapse_digits(pred_Y)
+    if val_Y.shape[0] > 1: val_Y = binary_arrays_to_digits(val_Y)
+    if pred_Y.shape[0] > 1: pred_Y = binary_arrays_to_digits(pred_Y)
     assert pred_Y.shape == val_Y.shape, (pred_Y.shape, val_Y.shape)
     return sum(int(p == t) for p, t in zip(pred_Y, val_Y)) / len(pred_Y)
 
