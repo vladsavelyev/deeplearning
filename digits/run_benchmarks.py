@@ -8,29 +8,25 @@ import plotly_express as px
 import plotly as py
 import plotly.graph_objs as go
 from plotly.subplots import make_subplots
-from digits.load_data import load_mnist, get_Y, get_X, \
-    load_toy, load_toy2, binary_arrays_to_digits, zip_x_y, evaluate
 
 np.set_string_function(lambda a: str(a.shape), repr=False)
 np.random.seed(1)
 
 
-def run_benchmarks(make_nn_fn, all_hparams):
+def run_benchmarks(make_nn_fn, train_nn_fn, eval_nn_fn, load_data_fn, all_hparams):
     print('Loading data...')
-    y_classes, training_data, test_data, validation_data = load_mnist()
-    training_x, training_y = training_data
-    test_x, test_y = test_data
-
+    num_x_classes, num_y_classes, tr_d, va_d, te_d = load_data_fn()
     eval_results = []
     labels = []
     runtimes = []
     test_accs = []
     for hparams in all_hparams:
-        nn = make_nn_fn(training_data, **hparams)
+        nn = make_nn_fn(tr_d, **hparams)
 
         def _benchmark_training():
-            accuracies, costs = nn.learn(training_data, validation_data, test_data)
-            eval_results.append(dict(epoch=list(range(len(costs))), cost=costs, acc=accuracies))
+            accuracies, costs = train_nn_fn(nn, tr_d, va_d)
+            eval_results.append(dict(epoch=list(range(len(costs))),
+                                     cost=costs, acc=accuracies))
 
         unique_params = {k: v for k, v in hparams.items()
                          if len(list(set(d[k] for d in all_hparams))) > 1}
@@ -41,7 +37,7 @@ def run_benchmarks(make_nn_fn, all_hparams):
         runtimes.append(time)
 
         # Evaluating on test data:
-        test_acc = nn.accuracy(test_x, test_y)
+        test_acc = eval_nn_fn(nn, te_d)
         test_accs.append(test_acc)
 
         print(f'Finished running with params {label}, run time: {time:.1f}, '
