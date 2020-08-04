@@ -20,6 +20,8 @@ def main():
         # dict(inercia=0,  subset=5000, hidden_layers=(100,), learning_rate=3.0,
         #      batch_size=10, regul_param=1.0, early_stop=2),
         dict(inercia=0,   subset=5000, hidden_layers=(100,), learning_rate=3.0,
+             batch_size=20, regul_param=1.0, early_stop=5),
+        dict(inercia=0,   subset=5000, hidden_layers=(100,), learning_rate=3.0,
              batch_size=10, regul_param=1.0, early_stop=5),
         dict(inercia=0,   subset=5000, hidden_layers=(100,), learning_rate=1.0,
              batch_size=10, regul_param=1.0, early_stop=5),
@@ -161,7 +163,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
                 activations, zs = self.feedforward(batch_x)
                 # calculating the weights and biases changes by doing the backprop
                 self.backprop(n, activations, zs, batch_y,
-                    learning_rate, regul_param=regularisation, inercia=inercia)
+                              learning_rate, regilarisation=regularisation, inercia=inercia)
 
                 if n_batches_trained % monitor_frequency == 0:
                     if n_batches_trained == 0:
@@ -211,7 +213,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
         return sum(int(p == t) for p, t in zip(pred_y_flat, test_y_flat)) / len(pred_y_flat)
 
     def backprop(self, n, activations, zs, train_y, learning_rate,
-                 regul_param, inercia):
+                 regilarisation, inercia):
         """
         n is the size of full training set
 
@@ -258,7 +260,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
             #     Vk = friction * Vk - learning_rate * dWk
             Mk = Mk * inercia - learning_rate * dWk  # calculating new momentum at the moment
             Wk += Mk  # updating the weight with the momentum
-            Wk -= learning_rate * (regul_param / n * self.weights[k])  # applying regularization
+            Wk -= learning_rate * (regilarisation / n * self.weights[k])  # applying regularization
             Bk -= learning_rate * dBk  # updating the biases - simply, without momentum or regularization
             self.momentums[k] = Mk
             self.weights[k] = Wk
@@ -313,9 +315,9 @@ def cross_entropy_cost(a, y):
 def regularized_cost(a, y, weights, regularisation):
     # a.shape = (m, 1)
     cost = cross_entropy_cost(a, y)
-    n = a.shape[0]
-    regularization = 0.5 * (regularisation / n) * \
-                     sum(np.linalg.norm(w) ** 2 for w in weights)
+    batch_size = a.shape[1]
+    regularization = 0.5 * (regularisation / batch_size) * \
+                     sum((w ** 2).sum() for w in weights)
     return cost + regularization
 
 
