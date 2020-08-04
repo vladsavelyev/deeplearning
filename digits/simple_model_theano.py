@@ -45,8 +45,8 @@ def main():
         print(f'Training the NN with hyperparams {hparams}')
 
         tr_x, tr_y = tr_d
-        pixels_in_picture = tr_x.shape[1]
-        output_classes = tr_y.shape[1]
+        pixels_in_picture = tr_x.get_value().shape[1]
+        output_classes = max(tr_y.eval()) + 1
         hidden_layers = list(hparams.get('hidden_layers'))
         return NeuralNetwork([
             FullyConnectedLayer(n_in=pixels_in_picture, n_out=hidden_layers[0]),
@@ -65,10 +65,19 @@ def main():
             subset_to = hparams.get('subset')
             tr_x = tr_x[:subset_to]
             tr_y = tr_y[:subset_to]
-        num_y_classes = max(tr_y) + 1
-        tr_y = digits_to_binary_arrays(tr_y, num_y_classes)
-        va_y = digits_to_binary_arrays(va_y, num_y_classes)
-        te_y = digits_to_binary_arrays(te_y, num_y_classes)
+        tr_x = shared(tr_x)
+        tr_y = shared(tr_y)
+        va_x = shared(va_x)
+        va_y = shared(va_y)
+        te_x = shared(te_x)
+        te_y = shared(te_y)
+        # num_y_classes = max(tr_y) + 1
+        tr_y = T.cast(tr_y, "int32")
+        va_y = T.cast(va_y, "int32")
+        te_y = T.cast(te_y, "int32")
+        # tr_y = digits_to_binary_arrays(tr_y, num_y_classes)
+        # va_y = digits_to_binary_arrays(va_y, num_y_classes)
+        # te_y = digits_to_binary_arrays(te_y, num_y_classes)
         return (tr_x, tr_y), (va_x, va_y), (te_x, te_y)
 
     run_benchmarks(make_nn, train_nn, eval_nn,
@@ -126,8 +135,8 @@ class FullyConnectedLayer(Layer):
 
     def accuracy(self, y):
         y_pred_flat = binary_arrays_to_digits(self.output)
-        y_test_flat = binary_arrays_to_digits(y)
-        return T.mean(T.eq(y_pred_flat, y_test_flat))
+        # y_test_flat = binary_arrays_to_digits(y)
+        return T.mean(T.eq(y_pred_flat, y))
 
 
 class NeuralNetwork:
@@ -151,7 +160,7 @@ class NeuralNetwork:
         for layer in layers:
             self.params.extend(layer.params)
         self.x = T.matrix('x')
-        self.y = T.matrix('y')
+        self.y = T.ivector('y')
         init_layer = layers[0]
         init_layer.set_input(self.x, self.hparams.get('batch_size'))
         for prev_layer, layer in zip(layers[:-1], layers[1:]):
@@ -164,8 +173,6 @@ class NeuralNetwork:
 
     def evaluate(self, test_data, batch_size=None):
         test_x, test_y = test_data
-        test_x = shared_dataset(test_x)
-        test_y = shared_dataset(test_y)
         batch_size = batch_size or self.hparams.get('batch_size')
         num_batches = math.ceil(test_x.get_value().shape[0] / batch_size)
         accuracy_fn = self.make_accuracy_fn(test_x, test_y)
@@ -191,13 +198,21 @@ class NeuralNetwork:
             })
 
     def make_train_fn(self, data_x, data_y,
-                      learning_rate, regularisation, batch_size, num_batches):
-        batch_size = batch_size or self.hparams.get('batch_size')
-        regul_param = 0.5 * regularisation * \
-                      sum((l.w ** 2).sum() for l in self.layers) / \
-                      num_batches
-        cost = cross_entropy_cost(self.layers[-1].output, self.y) + regul_param
+                      learning_rate, regularisation, batch_size):
+        regul_param = 0.5 * (regularisation / batch_size) * \
+                      sum((l.w ** 2).sum() for l in self.layers)
+        # note on syntax: T.arange(y.shape[0]) is a vector of integers [0,1,2,...,len(y)].
+        # Indexing a matrix M by the two vectors [0,1,...,K], [a,b,...,k] returns the
+        # elements M[0,a], M[1,b], ..., M[K,k] as a vector.  Here, we use this
+        # syntax to retrieve the log-probability of the correct labels, y.
+        log = T.log(self.layers[-1].output)
+        ind = T.arange(self.y.shape[0])
+        ind = T.cast(ind, 'int32')
+        log_ind = log[ind, self.y]
+        loss = -T.mean(log_ind)
+        cost = loss + regul_param
         grads = T.grad(cost, self.params)
+
         updates = [(param, param - learning_rate * grad)
                    for param, grad in zip(self.params, grads)]
 
@@ -239,17 +254,12 @@ class NeuralNetwork:
         training_x, training_y = training_data
         validation_x, validation_y = validation_data
 
-        training_x = shared_dataset(training_x)
-        training_y = shared_dataset(training_y)
-        validation_x = shared_dataset(validation_x)
-        validation_y = shared_dataset(validation_y)
-
         # Partition into smaller batches
         n_training_batches = math.ceil(training_x.get_value().shape[0] / batch_size)
         num_validation_batches = math.ceil(validation_x.get_value().shape[0] / batch_size)
 
         train_fn = self.make_train_fn(training_x, training_y,
-            learning_rate, regularisation, batch_size, n_training_batches)
+            learning_rate, regularisation, batch_size)
         accuracy_validation_fn = self.make_accuracy_fn(validation_x, validation_y, batch_size)
 
         # Do the actual training
@@ -308,7 +318,7 @@ class NeuralNetwork:
 def cross_entropy_cost(a, y):
     """ Return the cost associated with an output ``a`` and desired output ``y``
     """
-    return -T.mean(y * T.log(a) + (1 - y) * T.log(1 - a))
+    return -T.sum(y * T.log(a) + (1 - y) * T.log(1 - a))
 
 
 def data_size(data):
@@ -322,7 +332,7 @@ def binary_arrays_to_digits(y_pred):
     return T.argmax(y_pred, axis=1)
 
 
-def shared_dataset(data):
+def shared(data):
     """ Function that loads the dataset into shared variables
 
     The reason we store our dataset in shared variables is to allow
@@ -331,9 +341,7 @@ def shared_dataset(data):
     is needed (the default behaviour if the data is not in a shared
     variable) would lead to a large decrease in performance.
     """
-    if not isinstance(data, SharedVariable):
-        data = theano.shared(np.asarray(data, dtype=theano.config.floatX))
-    return data
+    return theano.shared(np.asarray(data, dtype=theano.config.floatX))
 
 
 if __name__ == '__main__':
