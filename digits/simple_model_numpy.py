@@ -5,7 +5,7 @@ import sys
 import numpy as np
 
 from digits import NeuralNetwork
-from digits.load_data import get_X, get_Y, evaluate, binary_arrays_to_digits
+from digits.mnist_loader import binary_arrays_to_digits, digits_to_binary_arrays, load_data_wrapper, get_x, get_y
 from digits.run_benchmarks import run_benchmarks
 
 
@@ -29,39 +29,48 @@ def main():
     - however learning_rate=1.0, hidden_layers=30 is faster
     - inercia doesn't affect accuracy, only the runtime
     """
-    def make_nn(train_data, **hparams):
+    def make_nn(tr_d, **hparams):
         hparams = hparams.copy()
         print(f'Training the NN with hyperparams {hparams}')
         if 'subset' in hparams:
-            train_data = train_data[:hparams.pop('subset')]
+            subset_to = hparams.pop('subset')
+            tr_d = tr_d[:subset_to]
 
-        layers = [get_X(train_data).shape[0]]
+        layers = [get_x(tr_d).shape[0]]
         if 'hidden_layers' in hparams:
             layers.extend(hparams.pop('hidden_layers'))
-        layers.append(get_Y(train_data).shape[0])
+        layers.append(get_y(tr_d).shape[0])
 
         return SimpleNeuralNetwork(layers, hparams)
 
-    run_benchmarks(make_nn, all_hparams)
+    def train_nn(nn, tr_d, va_d):
+        return nn.learn(tr_d, va_d)
+
+    def eval_nn(nn, te_d):
+        return nn.evaluate(te_d)
+
+    run_benchmarks(make_nn, train_nn, eval_nn,
+                   load_data_wrapper, all_hparams)
 
 
 class SimpleNeuralNetwork(NeuralNetwork):
     def __init__(self, layer_sizes, hparams):
         super().__init__(hparams)
-        self.epochs = hparams.get('epochs', 100)
-        self.learning_rate = hparams.get('learning_rate', 3.0)
-        self.batch_max_size = hparams.get('batch_max_size', 10)
-        self.regul_param = hparams.get('regul_param', 0.01)
-        self.early_stop = hparams.get('early_stop', 10)
-        self.inercia = hparams.get('inercia', 1.0)
-
+        self.hparams = dict(
+            epochs=hparams.get('epochs', 100),
+            learning_rate=hparams.get('learning_rate', 3.0),
+            batch_size=hparams.get('batch_size', 50),
+            regul_param=hparams.get('regul_param', 0.01),
+            early_stop=hparams.get('early_stop', 10),
+            inercia=hparams.get('inercia', 1.0),
+        )
         self.layer_sizes = layer_sizes
         np.random.seed(2)
+        self.biases = [np.random.randn(k, 1)
+                       for k in layer_sizes[1:]]
         self.weights = [np.random.randn(k, j) / np.sqrt(j)
                         for j, k in zip(layer_sizes[:-1], layer_sizes[1:])]
         self.momentums = [np.ones(w.shape) for w in self.weights]
-        self.biases = [np.random.randn(k, 1)
-                       for k in layer_sizes[1:]]
 
     def feedforward(self, X):
         A = X  # activation of the zero'th layer = input layer, shape = (i'th, m)
@@ -88,74 +97,107 @@ class SimpleNeuralNetwork(NeuralNetwork):
         activations, _ = self.feedforward(X)
         return self._activations_to_y(activations[-1])
 
-    def learn(self, train_data, validation_data=None):
-        if validation_data is None and self.early_stop:
+    def learn(self, training_data, validation_data=None,
+              epochs=None,
+              batch_size=None,
+              learning_rate=None,
+              regularisation=None,
+              inercia=None,
+              early_stop=None,
+              monitor_frequency=None):
+        epochs = epochs or self.hparams.get('epochs')
+        batch_size = batch_size or self.hparams.get('batch_size')
+        learning_rate = learning_rate or self.hparams.get('learning_rate')
+        regularisation = regularisation or self.hparams.get('regul_param')
+        inercia = inercia or self.hparams.get('inercia')
+        early_stop = early_stop or self.hparams.get('early_stop')
+
+        if validation_data is None and early_stop:
             sys.stderr.write('When early_stop is set, validation data must be provided\n')
             sys.exit(1)
 
         # Partition into smaller batches
-        n = train_data.shape[0]
-        n_batches = math.ceil(n / self.batch_max_size)
+        n = len(training_data)
+        n_batches = math.ceil(n / batch_size)
         batch_size = math.ceil(n / n_batches)
 
+        # best_validation_accuracy = 0.0
+        # best_iteration = 0
         accuracies = []
         costs = []
-        ini_learning_rate = self.learning_rate
+        ini_learning_rate = learning_rate
+        early_stopped = False
         np.random.seed(3)
-        for epoch in range(self.epochs):
-            np.random.shuffle(train_data)
-
-            # gradient_B = [np.zeros(b.shape) for b in self.biases]
-            # gradient_W = [np.zeros(w.shape) for w in self.weights]
-            output_activations = []
-            # calculating the gradient by summing over minibatches backprops
+        for epoch_i in range(epochs):
+            # np.random.shuffle(training_data)
             for batch_i in range(n_batches):
-                batch = train_data[batch_i * batch_size: (batch_i + 1) * batch_size]
-                activations, zs = self.feedforward(get_X(batch))
-                # calculating the weights and biases changes by doing the backprop
-                self.backprop(n, activations, zs, get_Y(batch),
-                    self.learning_rate, regul_param=self.regul_param, inercia=self.inercia)
-                # the full gradients are sums of minibatch gradients
-                # gradient_B = [gB + mgB for gB, mgB in zip(gradient_B, mini_gradient_B)]
-                # gradient_W = [gW + mgW for gW, mgW in zip(gradient_W, mini_gradient_W)]
-                output_activations.append(activations[-1])
-
-            acc, cost = self.monitor(epoch + 1, train_data, self.regul_param,
-                                     validation_data=validation_data)
-            costs.append(cost)
-            accuracies.append(acc)
-            if self.early_stop and \
-                    len(accuracies) > self.early_stop and \
-                    all(acc < a for a in accuracies[-self.early_stop-1:-1]):
-                self.learning_rate /= 2
-                print(f'Decreasing learning rate to {self.learning_rate}')
-                if self.learning_rate < ini_learning_rate/128:
-                    print(f'Learning rate dropped down to {self.learning_rate}<{ini_learning_rate}/128,'
-                          f'stopping at epoch {epoch}')
+                if early_stopped:
                     break
+                n_batches_trained = n_batches * epoch_i + batch_i
+                monitor_frequency = monitor_frequency or n_batches
+                if n_batches_trained % monitor_frequency == 0:
+                    print(f'Epoch {epoch_i + 1}. '
+                          f'Training mini-batch number {n_batches_trained}', end='')
+
+                batch = training_data[batch_i * batch_size: (batch_i + 1) * batch_size]
+                batch_x = get_x(batch)
+                batch_y = get_y(batch)
+
+                activations, zs = self.feedforward(batch_x)
+                # calculating the weights and biases changes by doing the backprop
+                self.backprop(n, activations, zs, batch_y,
+                    learning_rate, regul_param=regularisation, inercia=inercia)
+
+                if n_batches_trained % monitor_frequency == 0:
+                    if n_batches_trained == 0:
+                        print()
+                    else:
+                        activations, zs = self.feedforward(batch_x)
+                        current_cost = regularized_cost(
+                            activations[-1], batch_y,
+                            self.weights, regularisation=regularisation)
+                        validation_accuracy = self.evaluate(validation_data)
+                        print(f", current cost: {current_cost}", end='')
+                        print(f", validation accuracy: {validation_accuracy}", end='')
+                        print()
+
+                        costs.append(current_cost)
+                        accuracies.append(validation_accuracy)
+                        if early_stop and \
+                                len(costs) > early_stop and \
+                                all(validation_accuracy < a for a in accuracies[-early_stop-1:-1]):
+                            learning_rate /= 2
+                            print(f'Decreasing learning rate to {learning_rate}')
+                            if learning_rate < ini_learning_rate/128:
+                                print(f'Learning rate dropped down to '
+                                      f'{learning_rate}<{ini_learning_rate}/128,'
+                                      f'stopping at epoch {epoch_i + 1}')
+                                early_stopped = True
+
+
+        print('Finished training network.')
+        # print(f'Best validation accuracy of {best_validation_accuracy:.2%} '
+        #       f'obtained at iteration {best_iteration}')
         return accuracies, costs
 
-    def monitor(self, epoch_n, train_data, regul_param, validation_data=None):
-        print(f"Epoch {epoch_n}", end='')
-        cost = None
-        acc = None
+    def evaluate(self, test_data):
+        x = get_x(test_data)
+        y_flat = get_y(test_data)
+        predictions = self.predict(x)
+        return self.accuracy(predictions, y_flat)
 
-        activations, zs = self.feedforward(get_X(train_data))
-        y = get_Y(train_data)
-        cost = regularized_cost(activations[-1], y, self.weights, regul_param=regul_param)
-        print(f", cost: {cost}", end='')
+    def accuracy(self, pred_y_flat, test_y_flat):
+        """ pred_y      is a [n x 10] array of 0 and 1
+            test_y_flat is a [n] array of digits 0 through 9
+        """
+        if len(test_y_flat.shape) > 1:
+            test_y_flat = binary_arrays_to_digits(test_y_flat)
+        assert pred_y_flat.shape == test_y_flat.shape, (
+            pred_y_flat.shape, test_y_flat.shape)
+        return sum(int(p == t) for p, t in zip(pred_y_flat, test_y_flat)) / len(pred_y_flat)
 
-        if validation_data is not None:
-            val_x = get_X(validation_data)
-            val_y = get_Y(validation_data)
-            num_y_classes = get_Y(train_data).shape[0]
-            predictions = self.predict(val_x)
-            acc = evaluate(predictions, val_y, num_y_classes)
-            print(f", accuracy: {acc}", end='')
-        print()
-        return acc, cost
-
-    def backprop(self, n, activations, zs, train_y, learning_rate, regul_param, inercia):
+    def backprop(self, n, activations, zs, train_y, learning_rate,
+                 regul_param, inercia):
         """
         n is the size of full training set
 
@@ -208,7 +250,6 @@ class SimpleNeuralNetwork(NeuralNetwork):
             self.weights[k] = Wk
             self.biases[k] = Bk
 
-
     def save_nn(self, fpath):
         """ Save the neural network to the file `fpath`
         """
@@ -216,6 +257,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
             "sizes": self.layer_sizes,
             "weights": [w.tolist() for w in self.weights],
             "biases": [b.tolist() for b in self.biases],
+            "hparams": self.hparams,
         }
         with open(fpath, 'w') as f:
             json.dump(data, f)
@@ -228,7 +270,7 @@ class SimpleNeuralNetwork(NeuralNetwork):
         with open(fpath) as f:
             data = json.load(f)
 
-        net = SimpleNeuralNetwork(data['sizes'])
+        net = SimpleNeuralNetwork(data['sizes'], data['hparams'])
         net.weights = [np.array(w) for w in data['weights']]
         net.biases = [np.array(b) for b in data['biases']]
         return net
@@ -254,11 +296,12 @@ def cross_entropy_cost(a, y):
     return -np.sum(np.nan_to_num(y * np.log(a) + (1 - y) * np.log(1 - a)))
 
 
-def regularized_cost(a, y, weights, regul_param):
+def regularized_cost(a, y, weights, regularisation):
     # a.shape = (m, 1)
     cost = cross_entropy_cost(a, y)
     n = a.shape[0]
-    regularization = 0.5 * (regul_param / n) * sum(np.linalg.norm(w) ** 2 for w in weights)
+    regularization = 0.5 * (regularisation / n) * \
+                     sum(np.linalg.norm(w) ** 2 for w in weights)
     return cost + regularization
 
 
