@@ -15,12 +15,13 @@ np.random.seed(1)
 
 def run_benchmarks(make_nn_fn, train_nn_fn, eval_nn_fn, load_data_fn, all_hparams):
     print('Loading data...')
-    num_x_classes, num_y_classes, tr_d, va_d, te_d = load_data_fn()
     eval_results = []
     labels = []
     runtimes = []
     test_accs = []
     for hparams in all_hparams:
+        tr_d, va_d, te_d = load_data_fn(hparams)
+
         nn = make_nn_fn(tr_d, **hparams)
 
         def _benchmark_training():

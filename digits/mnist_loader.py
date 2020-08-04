@@ -30,11 +30,29 @@ def load_data():
     """
     path = join(dirname(__file__), 'mnist.pkl.gz')
     with gzip.open(path, 'rb') as f:
-        (train_x, train_Y), (valid_x, valid_Y), (test_X, test_y) = \
+        (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = \
             pickle.load(f, encoding='bytes')
-    return (train_x, train_Y), \
-           (test_X, test_y), \
-           (valid_x, valid_Y)
+    return (train_x, train_y), \
+           (valid_x, valid_y), \
+           (test_x, test_y)
+
+
+# def load_data_shared():
+#     (tr_x, tr_y), (va_x, va_y), (te_x, te_y) = load_data()
+#     num_x_classes = tr_x.shape[1]
+#     num_y_classes = max(tr_y) + 1
+#
+#     def shared(data):
+#         """Place the data into shared variables.  This allows Theano to copy
+#         the data to the GPU, if one is available.
+#         """
+#         shared_x = theano.shared(np.asarray(data[0], dtype=theano.config.floatX), borrow=True)
+#         shared_y = theano.shared(np.asarray(data[1], dtype=theano.config.floatX), borrow=True)
+#         return shared_x, T.cast(shared_y, "int32")
+#
+#     return shared(tr_x), shared(tr_y), \
+#            shared(va_x), shared(va_y), \
+#            shared(te_x), shared(te_y)
 
 
 def load_data_wrapper():
@@ -60,12 +78,9 @@ def load_data_wrapper():
     code.
     """
     (tr_x, tr_y), (va_x, va_y), (te_x, te_y) = load_data()
-    num_x_classes = tr_x.shape[1]
     num_y_classes = max(tr_y) + 1
     tr_y = digits_to_binary_arrays(tr_y, num_y_classes)
-    return num_x_classes, \
-           num_y_classes, \
-           zip_x_y(tr_x, tr_y), \
+    return zip_x_y(tr_x, tr_y), \
            zip_x_y(va_x, va_y), \
            zip_x_y(te_x, te_y)
 

@@ -11,16 +11,28 @@ from digits.run_benchmarks import run_benchmarks
 
 def main():
     all_hparams = [
-        # dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
-        #      batch_max_size=10, regul_param=1.0, early_stop=1),
-        dict(inercia=0.01, subset=5000, hidden_layers=(100,), epochs=100, learning_rate=3.0,
-             batch_max_size=10, regul_param=1.0, early_stop=1),
-        dict(inercia=0.01, subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=1.0,
-             batch_max_size=10, regul_param=1.0, early_stop=1),
-        # dict(inercia=0.01, subset=1000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
-        #      batch_max_size=10, regul_param=1.0, early_stop=1),
-        # dict(inercia=0,    subset=5000, hidden_layers=(30,),  epochs=100, learning_rate=3.0,
-        #      batch_max_size=10, regul_param=1.0, early_stop=1),
+        # dict(inercia=0,  subset=5000, hidden_layers=(100,), learning_rate=3.0,
+        #      batch_size=10, regul_param=1.0, early_stop=1),
+        # dict(inercia=0.01, subset=5000, hidden_layers=(100,), learning_rate=3.0,
+        #      batch_size=10, regul_param=1.0, early_stop=1),
+        # dict(inercia=0.1,  subset=5000, hidden_layers=(100,), learning_rate=3.0,
+        #      batch_size=10, regul_param=1.0, early_stop=1),
+        # dict(inercia=0,  subset=5000, hidden_layers=(100,), learning_rate=3.0,
+        #      batch_size=10, regul_param=1.0, early_stop=2),
+        dict(inercia=0,   subset=5000, hidden_layers=(100,), learning_rate=3.0,
+             batch_size=10, regul_param=1.0, early_stop=5),
+        dict(inercia=0,   subset=5000, hidden_layers=(100,), learning_rate=1.0,
+             batch_size=10, regul_param=1.0, early_stop=5),
+        dict(inercia=.01, subset=5000, hidden_layers=(100,), learning_rate=1.0,
+             batch_size=10, regul_param=1.0, early_stop=5),
+        # dict(inercia=0,  subset=5000, hidden_layers=(100,), learning_rate=3.0,
+        #      batch_size=10, regul_param=1.0, early_stop=20),
+        # dict(inercia=0,  subset=5000, hidden_layers=(100,), learning_rate=3.0,
+        #      batch_size=10, regul_param=1.0, early_stop=100),
+        # dict(inercia=0,  subset=5000, hidden_layers=(100,), learning_rate=3.0,
+        #      batch_size=10, regul_param=1.0, early_stop=0),
+        dict(inercia=0,  subset=5000, hidden_layers=(100,), learning_rate=1.0,
+             batch_size=10, regul_param=1.0, early_stop=0),
     ]
     """
     - the best results achieved with:
@@ -32,13 +44,9 @@ def main():
     def make_nn(tr_d, **hparams):
         hparams = hparams.copy()
         print(f'Training the NN with hyperparams {hparams}')
-        if 'subset' in hparams:
-            subset_to = hparams.pop('subset')
-            tr_d = tr_d[:subset_to]
-
         layers = [get_x(tr_d).shape[0]]
         if 'hidden_layers' in hparams:
-            layers.extend(hparams.pop('hidden_layers'))
+            layers.extend(hparams.get('hidden_layers'))
         layers.append(get_y(tr_d).shape[0])
 
         return SimpleNeuralNetwork(layers, hparams)
@@ -49,8 +57,15 @@ def main():
     def eval_nn(nn, te_d):
         return nn.evaluate(te_d)
 
+    def load_data(hparams):
+        tr_d, va_d, te_d = load_data_wrapper()
+        if 'subset' in hparams:
+            subset_to = hparams.get('subset')
+            tr_d = tr_d[:subset_to]
+        return tr_d, va_d, te_d
+
     run_benchmarks(make_nn, train_nn, eval_nn,
-                   load_data_wrapper, all_hparams)
+                   load_data, all_hparams)
 
 
 class SimpleNeuralNetwork(NeuralNetwork):
@@ -58,11 +73,11 @@ class SimpleNeuralNetwork(NeuralNetwork):
         super().__init__(hparams)
         self.hparams = dict(
             epochs=hparams.get('epochs', 100),
-            learning_rate=hparams.get('learning_rate', 3.0),
-            batch_size=hparams.get('batch_size', 50),
-            regul_param=hparams.get('regul_param', 0.01),
+            learning_rate=hparams.get('learning_rate', 3.),
+            batch_size=hparams.get('batch_size', 10),
+            regul_param=hparams.get('regul_param', .01),
             early_stop=hparams.get('early_stop', 10),
-            inercia=hparams.get('inercia', 1.0),
+            inercia=hparams.get('inercia', .01),
         )
         self.layer_sizes = layer_sizes
         np.random.seed(2)
@@ -152,17 +167,17 @@ class SimpleNeuralNetwork(NeuralNetwork):
                     if n_batches_trained == 0:
                         print()
                     else:
-                        activations, zs = self.feedforward(batch_x)
+                        # validate
                         current_cost = regularized_cost(
                             activations[-1], batch_y,
                             self.weights, regularisation=regularisation)
                         validation_accuracy = self.evaluate(validation_data)
                         print(f", current cost: {current_cost}", end='')
-                        print(f", validation accuracy: {validation_accuracy}", end='')
+                        print(f", validation accuracy: {validation_accuracy:.2%}", end='')
                         print()
-
                         costs.append(current_cost)
                         accuracies.append(validation_accuracy)
+
                         if early_stop and \
                                 len(costs) > early_stop and \
                                 all(validation_accuracy < a for a in accuracies[-early_stop-1:-1]):
@@ -173,7 +188,6 @@ class SimpleNeuralNetwork(NeuralNetwork):
                                       f'{learning_rate}<{ini_learning_rate}/128,'
                                       f'stopping at epoch {epoch_i + 1}')
                                 early_stopped = True
-
 
         print('Finished training network.')
         # print(f'Best validation accuracy of {best_validation_accuracy:.2%} '
