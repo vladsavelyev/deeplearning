@@ -1,0 +1,3 @@
+[submodule "scribepod"]
+	path = scribepod
+	url = git@github.com:vladsavelyev/scribepod.git
