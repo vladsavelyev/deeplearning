@@ -4,3 +4,5 @@ matplotlib
 tensorflow
 visualkeras
 jupyter
+keras_tuner
+pydot_ng
