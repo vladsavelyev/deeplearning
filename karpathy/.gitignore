@@ -1,3 +1,4 @@
 tinyshakespeare.txt
 names.txt
 gpt/runs
+gpt/model.pt

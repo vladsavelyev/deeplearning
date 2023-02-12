@@ -421,8 +421,6 @@ def main():
         model.parameters(),
         lr=learning_rate,
         weight_decay=weight_decay,
-        betas=(0.9, 0.99),
-        eps=1e-8,
     )
 
     data_loader = DataLoader(
