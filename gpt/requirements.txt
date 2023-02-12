@@ -1,0 +1,7 @@
+torch
+tensorboard
+jupyter
+matplotlib
+numpy
+graphviz
+click

@@ -9,8 +9,8 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from .char_dataset import CharDataset, print_samples
-from .model import Transformer
+from gpt.char_dataset import CharDataset, print_samples
+from gpt.model import Transformer
 
 
 @torch.inference_mode()
@@ -44,13 +44,13 @@ def evaluate(
 
 
 @click.command()
-@click.option("--input-file", type=click.Path(exists=True))
+@click.argument("input_file", type=click.Path(exists=True))
 @click.option("--n-layers", default=4, type=int)
 @click.option("--emb-dim", default=64, type=int)
 @click.option("--n-heads", default=4, type=int)
 @click.option("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-@click.option("--resume", default=False, type=bool)
-@click.option("--sample-only", default=False, type=bool)
+@click.option("--resume", is_flag=True)
+@click.option("--sample-only", is_flag=True)
 @click.option("--batch-size", default=32, type=int)
 @click.option("--learning-rate", default=5e-4, type=float)
 @click.option("--weight-decay", default=0.01, type=float)
@@ -75,14 +75,15 @@ def main(
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    # Init dataset
+    print(f'Building the dataset from {input_file}...')
     input_text_path = Path(input_file)
     with input_text_path.open("r") as f:
         words: list[str] = f.read().splitlines()
     dataset = CharDataset(words)
     print(f"Dataset determined that: {dataset.vocab_size=}, {dataset.block_size=}")
+    print()
 
-    # Init model
+    print('Initialising the model...')
     model = Transformer(
         vocab_size=dataset.vocab_size,
         block_size=dataset.block_size,
@@ -91,11 +92,13 @@ def main(
         n_layers=n_layers,
     ).to(device)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    model_path = "model.pt"
+    model_path = Path("saves/model.pt")
+    model_path.parent.mkdir(exist_ok=True)
     if resume or sample_only:
         # note: if we sample-only then we also assume we are resuming
-        print(f"Resuming from the existing model {model_path}")
+        print(f"Initializing from the existing model state {model_path}")
         model.load_state_dict(torch.load(model_path))
+    print()
 
     if sample_only:
         print_samples(model=model, dataset=dataset, num=50, device=device)

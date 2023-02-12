@@ -149,7 +149,7 @@ class Transformer(nn.Module):
         # Report number of parameters (note we don't count the decoder parameters
         # in lm_head)
         n_params = sum(p.numel() for p in self.transformer.parameters())
-        print(f"transformer parameters: {n_params}")
+        print(f"Transformer parameters: {n_params}")
 
     def forward(self, x, targets=None) -> tuple[torch.Tensor, torch.Tensor | None]:
         device = x.device
