@@ -1,4 +1,5 @@
 torch
+tensorboard
 jupyter
 matplotlib
 numpy
