@@ -1,19 +1,13 @@
 from abc import ABC, abstractmethod
-from enum import Enum
 from pathlib import Path
+from typing import Callable
 
 import torch
 from torch.utils.data import Dataset, Subset
+import tiktoken
 
 
-class DatasetType(Enum):
-    WORD_LIST = "word_list"
-    TEXT = "text"
-
-
-def create_dataset(
-    path: Path, dataset_type: DatasetType, block_size: int
-) -> "MyDataset":
+def create_dataset(path: Path, dataset_class: str, block_size: int) -> "MyDataset":
     pickled_path = path.with_suffix(".pt")
     if pickled_path.exists():
         print(f"Loading pickled dataset from {pickled_path}...")
@@ -23,12 +17,12 @@ def create_dataset(
     print(f"Creating dataset from file {path}...")
     with path.open("r") as f:
         text: str = f.read()
-    if dataset_type == DatasetType.WORD_LIST:
+    if dataset_class == WordListDataset.__name__:
         dataset = WordListDataset(text.splitlines())
-    elif dataset_type == DatasetType.TEXT:
-        dataset = TextDataset(text, block_size=block_size)
+    elif dataset_class == TextDataset.__name__:
+        dataset = TextDataset(text, block_size=block_size, tokenize=char_tokenize)
     else:
-        raise ValueError(f"Unknown dataset type {dataset_type}")
+        raise ValueError(f"Unknown dataset type {dataset_class}")
 
     print(f"Saving dataset to {pickled_path}...")
     torch.save(dataset, pickled_path)
@@ -75,27 +69,45 @@ class MyDataset(Dataset, ABC):
         ...
 
 
+def word_tokenize(text: str) -> dict[str, int]:
+    words = sorted(list(set(text.split())))
+    return {s: i for i, s in enumerate(words)}
+
+
+def char_tokenize(text: str) -> dict[str, int]:
+    chars = sorted(list(set(text)))
+    return {s: i for i, s in enumerate(chars)}
+
+
+def tiktoken_tokenize(text: str) -> dict[str, int]:
+    enc = tiktoken.get_encoding("gpt2")
+    ids = enc.encode_ordinary(text)
+    print(f"Dataset {len(ids):,} tokens")
+    return {enc.decode([id]): id for id in ids}
+
+
 class TextDataset(MyDataset):
-    def __init__(self, text: str, block_size: int):
-        chars = sorted(list(set(text)))
-        self.vocab_size = len(chars)
+    def __init__(
+        self, text: str, block_size: int, tokenize: Callable[[str], dict[str, int]]
+    ):
+        super().__init__()
         self.block_size = block_size
-        self.stoi = {s: i for i, s in enumerate(chars)}
+        self.stoi = tokenize(text)
         self.itos = {i: s for s, i in self.stoi.items()}
+        self.vocab_size = len(self.stoi)
 
         print(f"Text size: {len(text)}")
         print(f"Block size: {self.block_size}")
-        print(f"Number of unique characters in the vocabulary: {len(chars)}")
-        print("Vocabulary:", "".join(chars))
+        print(f"Number of unique tokens in the vocabulary: {self.vocab_size}")
 
         print("Converting the text into tensors...")
         self.x = torch.zeros((len(text) - block_size, block_size), dtype=torch.long)
         self.y = torch.zeros((len(text) - block_size, block_size), dtype=torch.long)
-        for char_idx in range(len(text) - block_size):
-            wx = text[char_idx : char_idx + block_size]
-            wy = text[char_idx + 1 : char_idx + block_size + 1]
-            self.x[char_idx, :] = self.encode(wx)
-            self.y[char_idx, :] = self.encode(wy)
+        for token_idx in range(len(text) - block_size):
+            wx = text[token_idx : token_idx + block_size]
+            wy = text[token_idx + 1 : token_idx + block_size + 1]
+            self.x[token_idx, :] = self.encode(wx.split())
+            self.y[token_idx, :] = self.encode(wy.split())
 
         print("Splitting into train and test...")
         # Partition the input data into a training and the test set
@@ -108,12 +120,6 @@ class TextDataset(MyDataset):
             f"Split the dataset into {len(self.train_set)} training examples "
             f"and {len(self.test_set)} test examples"
         )
-
-    @staticmethod
-    def _clean_words(words: list[str]) -> list[str]:
-        words = [w.strip() for w in words]  # Get rid of any leading/trailing space
-        words = [w for w in words if w]  # Get rid of any empty strings
-        return words
 
     def sample_and_print(
         self,
@@ -246,3 +252,6 @@ class WordListDataset(MyDataset):
         ]:
             print(f"{len(samples)} samples that are {desc}:")
             print("\n".join(samples))
+
+
+DATASET_CLASSES = [TextDataset, WordListDataset]

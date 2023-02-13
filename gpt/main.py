@@ -7,16 +7,15 @@ import torch
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from gpt.dataset import create_dataset, DatasetType, MyDataset
+from gpt.dataset import create_dataset, DATASET_CLASSES
 from gpt.model import Transformer
 
 
 @click.command()
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option(
-    "--dataset-type", default="text", 
-    type=click.Choice([m.lower() for m in DatasetType.__members__]),
-    callback=lambda ctx, param, value: DatasetType(value.lower())
+    "--dataset-type", default="text",
+    type=click.Choice([c.__name__ for c in DATASET_CLASSES]),
 )
 @click.option("--n-layers", default=4, type=int)
 @click.option("--emb-dim", default=64, type=int)
@@ -33,7 +32,7 @@ from gpt.model import Transformer
 @click.option("--block-size", default=32, type=int)
 def main(
     input_file: str,
-    dataset_type: DatasetType,
+    dataset_type: str,
     n_layers: int,
     emb_dim: int,
     n_heads: int,
