@@ -137,7 +137,7 @@ class Transformer(nn.Module):
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(vocab_size, emb_dim),
-                wpe=nn.Embedding(vocab_size, emb_dim),
+                wpe=nn.Embedding(block_size, emb_dim),
                 blocks=nn.ModuleList(
                     [Block(n_heads, emb_dim, block_size) for _ in range(n_layers)]
                 ),
