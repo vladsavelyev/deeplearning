@@ -6,6 +6,8 @@ import math
 
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataset
+from torch.utils.data.dataloader import DataLoader
 from torch.nn import functional as F
 
 
@@ -227,3 +229,32 @@ class Transformer(nn.Module):
             x = torch.cat((x, x_next), dim=1)
     
         return x
+    
+    @torch.inference_mode()
+    def evaluate(
+        self,
+        dataset: Dataset,
+        device: torch.device,
+        batch_size: int = 50,
+        max_batches: int | None = None,
+    ):
+        self.eval()
+        losses = []
+        loader = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=0,
+        )
+        for batch_i, batch in enumerate(loader):
+            x, y = batch
+            x = x.to(device)
+            y = y.to(device)
+            _, loss = self(x, y)
+            losses.append(loss)
+            if max_batches is not None and batch_i >= max_batches:
+                break
+    
+        out = torch.tensor(losses).mean().item()
+        self.train()
+        return out
