@@ -4,19 +4,19 @@ from pathlib import Path
 import click
 
 import torch
-from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from gpt.char_dataset import CharDataset
-from gpt.text_dataset import TextDataset
+from gpt.dataset import create_dataset, DatasetType, MyDataset
 from gpt.model import Transformer
 
 
 @click.command()
 @click.argument("input_file", type=click.Path(exists=True))
 @click.option(
-    "--dataset-type", default="text", type=click.Choice(["list_of_words", "text"])
+    "--dataset-type", default="text", 
+    type=click.Choice([m.lower() for m in DatasetType.__members__]),
+    callback=lambda ctx, param, value: DatasetType(value.lower())
 )
 @click.option("--n-layers", default=4, type=int)
 @click.option("--emb-dim", default=64, type=int)
@@ -33,7 +33,7 @@ from gpt.model import Transformer
 @click.option("--block-size", default=32, type=int)
 def main(
     input_file: str,
-    dataset_type: str,
+    dataset_type: DatasetType,
     n_layers: int,
     emb_dim: int,
     n_heads: int,
@@ -56,16 +56,8 @@ def main(
         device = torch.device("cpu")
 
     print(f"Building the dataset from {input_file}...")
-    input_text_path = Path(input_file)
-    with input_text_path.open("r") as f:
-        text: str = f.read()
-
-    if dataset_type == "list_of_words":
-        dataset = CharDataset(text.splitlines())
-    elif dataset_type == "text":
-        dataset = TextDataset(text, block_size=block_size)
-    else:
-        raise click.ClickException(f"Unknown dataset type {dataset_type}")
+    input_path = Path(input_file)
+    dataset = create_dataset(input_path, dataset_type, block_size=block_size)
 
     print(f"Dataset determined that: {dataset.vocab_size=}, {dataset.block_size=}")
     print()
@@ -79,7 +71,7 @@ def main(
         n_layers=n_layers,
     ).to(device)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    model_path = Path(f"saves/{input_text_path.name}.pt")
+    model_path = Path(f"saves/{input_path.name}.pt")
     model_path.parent.mkdir(exist_ok=True)
     if resume or sample_only:
         # note: if we sample-only then we also assume we are resuming
