@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 
 
 class CharDataset(Dataset):
-    def __init__(self, words: list[str], device: str):
+    def __init__(self, words: list[str]):
         words = self._clean_words(words)
         self.words = words
 
@@ -47,8 +47,6 @@ class CharDataset(Dataset):
             # ignore_index=-1, so it doesn't look at these values in the "y" tensor.
             # When generating words, we use the prompt that wouldn't contain -1 characters.
             self.y[i, len(t) + 1:] = -1
-        self.x.to(device)
-        self.y.to(device)
 
     @staticmethod
     def _clean_words(words: list[str]) -> list[str]:
@@ -71,9 +69,9 @@ class CharDataset(Dataset):
     def sample_and_print(
         self,
         model,
-        device: str,
+        device: torch.device,
         top_k: int | None = None,
-        clean: bool = False,
+        clean: bool = True,
         num: int = 10,
     ):
         """

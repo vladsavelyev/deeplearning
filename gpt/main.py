@@ -4,7 +4,6 @@ from pathlib import Path
 import click
 
 import torch
-import torch.nn as nn
 from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -12,36 +11,6 @@ from torch.utils.tensorboard import SummaryWriter
 from gpt.char_dataset import CharDataset
 from gpt.text_dataset import TextDataset
 from gpt.model import Transformer
-
-
-@torch.inference_mode()
-def evaluate(
-    model: nn.Module,
-    dataset: Dataset,
-    device: str,
-    batch_size: int = 50,
-    max_batches: int | None = None,
-):
-    model.eval()
-    losses = []
-    loader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=0,
-    )
-    for batch_i, batch in enumerate(loader):
-        x, y = batch
-        x = x.to(device)
-        y = y.to(device)
-        _, loss = model(x, y)
-        losses.append(loss)
-        if max_batches is not None and batch_i >= max_batches:
-            break
-
-    out = torch.tensor(losses).mean().item()
-    model.train()
-    return out
 
 
 @click.command()
@@ -52,7 +21,7 @@ def evaluate(
 @click.option("--n-layers", default=4, type=int)
 @click.option("--emb-dim", default=64, type=int)
 @click.option("--n-heads", default=4, type=int)
-@click.option("--device", default="cuda" if torch.cuda.is_available() else "cpu")
+@click.option("--disable-cuda", is_flag=True)
 @click.option("--resume", is_flag=True)
 @click.option("--sample-only", is_flag=True)
 @click.option("--batch-size", default=32, type=int)
@@ -68,7 +37,7 @@ def main(
     n_layers: int,
     emb_dim: int,
     n_heads: int,
-    device: str,
+    disable_cuda: str,
     resume: bool,
     sample_only: bool,
     batch_size: int,
@@ -81,19 +50,23 @@ def main(
 ):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
+    if not disable_cuda and torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
 
     print(f"Building the dataset from {input_file}...")
     input_text_path = Path(input_file)
     with input_text_path.open("r") as f:
         text: str = f.read()
-        
+
     if dataset_type == "list_of_words":
-        dataset = CharDataset(text.splitlines(), device)
-    elif dataset_type == 'text':
-        dataset = TextDataset(text, device, block_size=block_size)
+        dataset = CharDataset(text.splitlines())
+    elif dataset_type == "text":
+        dataset = TextDataset(text, block_size=block_size)
     else:
         raise click.ClickException(f"Unknown dataset type {dataset_type}")
-    
+
     print(f"Dataset determined that: {dataset.vocab_size=}, {dataset.block_size=}")
     print()
 
@@ -139,7 +112,7 @@ def main(
     def _evaluate_and_save(best_loss: int | None = None) -> int:
         dataset.sample_and_print(model=model, device=device)
         train_loss, test_loss = [
-            evaluate(model, subset, device, batch_size=100, max_batches=10)
+            model.evaluate(subset, device, batch_size=100, max_batches=10)
             for subset in [dataset.train_set, dataset.test_set]
         ]
         writer.add_scalar("Loss/train", train_loss, step)
@@ -161,6 +134,9 @@ def main(
     step = 0
     try:
         for (x, y) in data_loader:
+            x = x.to(device)
+            y = y.to(device)
+            
             t0 = time.time()
 
             logits, loss = model(x, y)
@@ -172,7 +148,7 @@ def main(
 
             # Wait for all CUDA work on the GPU to finish then calculate iteration time
             # taken
-            if device.startswith("cuda"):
+            if device.type == "cuda":
                 torch.cuda.synchronize()
             t1 = time.time()
 

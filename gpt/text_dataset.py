@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 
 
 class TextDataset(Dataset):
-    def __init__(self, text: str, device: str, block_size: int):
+    def __init__(self, text: str, block_size: int):
         self.text = text
 
         chars = sorted(list(set(text)))
@@ -25,8 +25,6 @@ class TextDataset(Dataset):
             wy = text[char_idx + 1:char_idx + block_size + 1]
             self.x[char_idx, :] = self.encode(wx)
             self.y[char_idx, :] = self.encode(wy)
-        self.x.to(device)
-        self.y.to(device)
         
         print('Splitting into train and test...')
         # Partition the input data into a training and the test set
