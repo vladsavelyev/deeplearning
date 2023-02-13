@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 
 
 class CharDataset(Dataset):
-    def __init__(self, words: list[str]):
+    def __init__(self, words: list[str], device: str):
         words = self._clean_words(words)
         self.words = words
 
@@ -15,6 +15,7 @@ class CharDataset(Dataset):
 
         self.stoi = {s: i + 1 for i, s in enumerate(chars)}
         self.itos = {i: s for s, i in self.stoi.items()}
+        self.itos[0] = '.'
 
         print(f"Number of examples in the dataset: {len(words)}")
         print(f"Max word length: {max_word_length}")
@@ -31,6 +32,23 @@ class CharDataset(Dataset):
             f"Split the dataset into {len(self.train_set)} training examples "
             f"and {len(self.test_set)} test examples"
         )
+        
+        self.x = torch.zeros((len(words), self.block_size), dtype=torch.long)
+        self.y = torch.zeros((len(words), self.block_size), dtype=torch.long)
+        for i, word in enumerate(words):
+            t = self.encode(word)
+            self.x[i, 1:1 + len(t)] = t
+            self.y[i, :-1] = self.x[i, 1:]
+            # Index -1 will mask the loss at the inactive locations. We don't train
+            # the model with the index -1: remember the embedding matrix takes x as indices,
+            # so index -1 wouldn't even make sense; so our vocabulary has only the "0" 
+            # <START> character along with real characters encoded as 1-27. Our "y" will
+            # only be used in the cross_entropy function, where we explicitly pass
+            # ignore_index=-1, so it doesn't look at these values in the "y" tensor.
+            # When generating words, we use the prompt that wouldn't contain -1 characters.
+            self.y[i, len(t) + 1:] = -1
+        self.x.to(device)
+        self.y.to(device)
 
     @staticmethod
     def _clean_words(words: list[str]) -> list[str]:
@@ -48,15 +66,7 @@ class CharDataset(Dataset):
         return len(self.words)
 
     def __getitem__(self, index: int):
-        word: str = self.words[index]
-        w: torch.Tensor = self.encode(word)
-
-        x = torch.zeros(self.block_size, dtype=torch.long)
-        y = torch.zeros(self.block_size, dtype=torch.long)
-        x[1 : 1 + len(w)] = w
-        y[: len(w)] = w
-        y[len(w) + 1 :] = -1  # index -1 will mask the loss at the inactive locations
-        return x, y
+        return self.x[index], self.y[index]
 
 
 def print_samples(
@@ -65,6 +75,7 @@ def print_samples(
     device: str,
     num: int = 10,
     top_k: int | None = None,
+    clean: bool = False,
 ):
     """
     Samples from the model and pretty prints the decoded samples
@@ -79,17 +90,19 @@ def print_samples(
     x_sampled = model.generate(
         x_init, max_new_tokens=n_steps, top_k=top_k, do_sample=True
     ).to("cpu")
+    if clean:
+        x_sampled = x_sampled[:, 1:]  # remove the "0" <START> token
 
     train_samples, test_samples, new_samples = [], [], []
 
     for sample_i in range(x_sampled.shape[0]):
-        # Get the sample_i'th row of sampled integers, as a Python list.
-        # We are also trimming out the first <START> token.
-        row: list[int] = x_sampled[sample_i, 1:].tolist()
+        # Get the sample_i'th row of sampled integers, as a Python list
+        row: list[int] = x_sampled[sample_i].tolist()
 
-        # Token "0" is the <STOP> token, so we crop the output sequence at that point.
-        crop_from = row.index(0) if 0 in row else len(row)
-        row = row[:crop_from]
+        if clean:
+            # Token "0" is also the <STOP> token, so we crop the output sequence at that point
+            crop_from = row.index(0) if 0 in row else len(row)
+            row = row[:crop_from]
 
         word_sample = dataset.decode(row)
 
@@ -106,4 +119,5 @@ def print_samples(
         (test_samples, "in test"),
         (new_samples, "new"),
     ]:
-        print(f"{len(samples)} samples that are {desc}:", " ".join(samples))
+        print(f"{len(samples)} samples that are {desc}:")
+        print("\n".join(samples))

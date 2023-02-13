@@ -40,7 +40,7 @@ class CasualSelfAttention(nn.Module):
         self.value = nn.Linear(emb_dim, emb_dim, bias=False)
         self.n_heads = n_heads
 
-        # causal mask to ensure that attention is only applied to the left in the
+        # Causal mask to ensure that attention is only applied to the left in the
         # input sequence
         self.register_buffer(
             "mask",
@@ -136,8 +136,8 @@ class Transformer(nn.Module):
         self.block_size = block_size
         self.transformer = nn.ModuleDict(
             dict(
-                tok_emb=nn.Embedding(vocab_size, emb_dim),
-                pos_emb=nn.Embedding(vocab_size, emb_dim),
+                wte=nn.Embedding(vocab_size, emb_dim),
+                wpe=nn.Embedding(vocab_size, emb_dim),
                 blocks=nn.ModuleList(
                     [Block(n_heads, emb_dim, block_size) for _ in range(n_layers)]
                 ),
@@ -161,22 +161,27 @@ class Transformer(nn.Module):
         pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # (1, t)
 
         # forward the GTP model
-        tok_emb = self.transformer.tok_emb(x)  # (b, t, c)
-        pos_emb = self.transformer.pos_emb(pos)  # (1, t, c)
+        tok_emb = self.transformer.wte(x)  # (b, t, c)
+        pos_emb = self.transformer.wpe(pos)  # (1, t, c)
         x = tok_emb + pos_emb  # (b, t, c)
         for block in self.transformer.blocks:
             x = block(x)
         x = self.transformer.lnorm(x)
 
-        loss = None
-        logits = self.lm_head(x)
         if targets is not None:
+            logits = self.lm_head(x)
             b, t, vocab_size = logits.shape
             loss = F.cross_entropy(
                 logits.view(b * t, vocab_size),  # (b*t, vocab_size)
                 targets.view(b * t),  # (b*t)
                 ignore_index=-1,
             )
+        else:
+            loss = None
+            # Inference-time mini-optimization: only forward the lm_head on the 
+            # very last position
+            logits = self.lm_head(x[:, [-1], :])  # note: using list [-1] to 
+            # preserve the time dim
         return logits, loss
 
     @torch.no_grad()

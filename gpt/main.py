@@ -79,7 +79,7 @@ def main(
     input_text_path = Path(input_file)
     with input_text_path.open("r") as f:
         words: list[str] = f.read().splitlines()
-    dataset = CharDataset(words)
+    dataset = CharDataset(words, device)
     print(f"Dataset determined that: {dataset.vocab_size=}, {dataset.block_size=}")
     print()
 
@@ -148,9 +148,6 @@ def main(
     try:
         for (x, y) in data_loader:
             t0 = time.time()
-
-            x.to(device)
-            y.to(device)
 
             logits, loss = model(x, y)
 
