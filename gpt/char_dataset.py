@@ -68,56 +68,53 @@ class CharDataset(Dataset):
     def __getitem__(self, index: int):
         return self.x[index], self.y[index]
 
-
-def print_samples(
-    model,
-    dataset: CharDataset,
-    device: str,
-    num: int = 10,
-    top_k: int | None = None,
-    clean: bool = False,
-):
-    """
-    Samples from the model and pretty prints the decoded samples
-    """
-    x_init = torch.zeros(num, 1, dtype=torch.long).to(device)
-
-    top_k = top_k if top_k != -1 else None
-
-    # -1 because we already start with <START> token (index 0)
-    n_steps = dataset.block_size - 1
-
-    x_sampled = model.generate(
-        x_init, max_new_tokens=n_steps, top_k=top_k, do_sample=True
-    ).to("cpu")
-    if clean:
-        x_sampled = x_sampled[:, 1:]  # remove the "0" <START> token
-
-    train_samples, test_samples, new_samples = [], [], []
-
-    for sample_i in range(x_sampled.shape[0]):
-        # Get the sample_i'th row of sampled integers, as a Python list
-        row: list[int] = x_sampled[sample_i].tolist()
-
+    def sample_and_print(
+        self,
+        model,
+        device: str,
+        top_k: int | None = None,
+        clean: bool = False,
+        num: int = 10,
+    ):
+        """
+        Samples from the model and pretty prints the decoded samples
+        """
+        x_init = torch.zeros(num, 1, dtype=torch.long).to(device)
+    
+        # -1 because we already start with <START> token (index 0)
+        n_steps = self.block_size - 1
+    
+        x_sampled = model.generate(
+            x_init, max_new_tokens=n_steps, top_k=top_k, do_sample=True
+        ).to("cpu")
         if clean:
-            # Token "0" is also the <STOP> token, so we crop the output sequence at that point
-            crop_from = row.index(0) if 0 in row else len(row)
-            row = row[:crop_from]
-
-        word_sample = dataset.decode(row)
-
-        # separately track samples that we have and have not seen before
-        if word_sample in dataset.train_set:
-            train_samples.append(word_sample)
-        elif word_sample in dataset.test_set:
-            test_samples.append(word_sample)
-        else:
-            new_samples.append(word_sample)
-
-    for samples, desc in [
-        (train_samples, "in train"),
-        (test_samples, "in test"),
-        (new_samples, "new"),
-    ]:
-        print(f"{len(samples)} samples that are {desc}:")
-        print("\n".join(samples))
+            x_sampled = x_sampled[:, 1:]  # remove the "0" <START> token
+    
+        train_samples, test_samples, new_samples = [], [], []
+    
+        for sample_i in range(x_sampled.shape[0]):
+            # Get the sample_i'th row of sampled integers, as a Python list
+            row: list[int] = x_sampled[sample_i].tolist()
+    
+            if clean:
+                # Token "0" is also the <STOP> token, so we crop the output sequence at that point
+                crop_from = row.index(0) if 0 in row else len(row)
+                row = row[:crop_from]
+    
+            word_sample = self.decode(row)
+    
+            # separately track samples that we have and have not seen before
+            if word_sample in self.train_set:
+                train_samples.append(word_sample)
+            elif word_sample in self.test_set:
+                test_samples.append(word_sample)
+            else:
+                new_samples.append(word_sample)
+    
+        for samples, desc in [
+            (train_samples, "in train"),
+            (test_samples, "in test"),
+            (new_samples, "new"),
+        ]:
+            print(f"{len(samples)} samples that are {desc}:")
+            print("\n".join(samples))

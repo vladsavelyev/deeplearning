@@ -9,7 +9,8 @@ from torch.utils.data import Dataset
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from gpt.char_dataset import CharDataset, print_samples
+from gpt.char_dataset import CharDataset
+from gpt.text_dataset import TextDataset
 from gpt.model import Transformer
 
 
@@ -45,6 +46,9 @@ def evaluate(
 
 @click.command()
 @click.argument("input_file", type=click.Path(exists=True))
+@click.option(
+    "--dataset-type", default="text", type=click.Choice(["list_of_words", "text"])
+)
 @click.option("--n-layers", default=4, type=int)
 @click.option("--emb-dim", default=64, type=int)
 @click.option("--n-heads", default=4, type=int)
@@ -57,8 +61,10 @@ def evaluate(
 @click.option("--num-workers", default=1, type=int)
 @click.option("--max-steps", default=100_000, type=int)
 @click.option("--seed", default=0, type=int)
+@click.option("--block-size", default=32, type=int)
 def main(
     input_file: str,
+    dataset_type: str,
     n_layers: int,
     emb_dim: int,
     n_heads: int,
@@ -71,19 +77,27 @@ def main(
     num_workers: int,
     max_steps: int,
     seed: int,
+    block_size: int,
 ):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    print(f'Building the dataset from {input_file}...')
+    print(f"Building the dataset from {input_file}...")
     input_text_path = Path(input_file)
     with input_text_path.open("r") as f:
-        words: list[str] = f.read().splitlines()
-    dataset = CharDataset(words, device)
+        text: str = f.read()
+        
+    if dataset_type == "list_of_words":
+        dataset = CharDataset(text.splitlines(), device)
+    elif dataset_type == 'text':
+        dataset = TextDataset(text, device, block_size=block_size)
+    else:
+        raise click.ClickException(f"Unknown dataset type {dataset_type}")
+    
     print(f"Dataset determined that: {dataset.vocab_size=}, {dataset.block_size=}")
     print()
 
-    print('Initialising the model...')
+    print("Initialising the model...")
     model = Transformer(
         vocab_size=dataset.vocab_size,
         block_size=dataset.block_size,
@@ -92,7 +106,7 @@ def main(
         n_layers=n_layers,
     ).to(device)
     print(f"Total number of parameters: {sum(p.numel() for p in model.parameters())}")
-    model_path = Path("saves/model.pt")
+    model_path = Path(f"saves/{input_text_path.name}.pt")
     model_path.parent.mkdir(exist_ok=True)
     if resume or sample_only:
         # note: if we sample-only then we also assume we are resuming
@@ -101,7 +115,7 @@ def main(
     print()
 
     if sample_only:
-        print_samples(model=model, dataset=dataset, num=50, device=device)
+        dataset.sample_and_print(model=model, device=device)
         sys.exit()
 
     optimizer = torch.optim.AdamW(
@@ -123,7 +137,7 @@ def main(
     writer = SummaryWriter()
 
     def _evaluate_and_save(best_loss: int | None = None) -> int:
-        print_samples(model, dataset, device, num=10)
+        dataset.sample_and_print(model=model, device=device)
         train_loss, test_loss = [
             evaluate(model, subset, device, batch_size=100, max_batches=10)
             for subset in [dataset.train_set, dataset.test_set]

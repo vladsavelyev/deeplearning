@@ -199,13 +199,12 @@ class Transformer(nn.Module):
         into the model each time. Most likely you'll want to make sure to be in
         model.eval() mode of operation for this.
         """
-        block_size = self.block_size
         for _ in range(max_new_tokens):
             # If the sequence context is growing too long we must crop it at block_size
-            x = x if x.shape[1] <= block_size else x[:, -block_size:]
+            context = x if x.shape[1] <= self.block_size else x[:, -self.block_size:]
     
             # Forward the model to get the logits for the index in the sequence
-            logits, _ = self(x)
+            logits, _ = self(context)
     
             # Pluck the logits at the final step and scale by desired temperature
             logits = logits[:, -1, :] / temperature
