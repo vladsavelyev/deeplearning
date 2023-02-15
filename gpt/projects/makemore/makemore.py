@@ -6,6 +6,7 @@ import click
 import torch
 import torch.nn as nn
 from torch.utils.data import TensorDataset, random_split
+from torch.utils.tensorboard import SummaryWriter
 
 from gpt import utils
 from gpt.model import Transformer
@@ -76,20 +77,23 @@ class WordListDataset(TensorDataset):
         return "".join(self.itos[i] for i in ints)
 
 
-def create_dataset(input_path: Path, saves_dir: Path) -> WordListDataset:
-    pickled_path = saves_dir / f'{input_path.stem}-dataset.pt'
-    if pickled_path.exists():
-        print(f"Loading pickled dataset from {pickled_path}...")
-        dataset = torch.load(pickled_path)
-        return dataset
-
-    print(f"Creating dataset from file {input_path}...")
-    with input_path.open("r") as f:
-        text: str = f.read()
-    dataset = WordListDataset(text.splitlines())
-
-    print(f"Saving dataset to {pickled_path}...")
-    torch.save(dataset, pickled_path)
+def create_dataset(
+    input_path: Path,
+    save_path: Path,
+) -> WordListDataset:
+    if save_path.exists():
+        print(f"Loading pickled dataset from {save_path}...")
+        dataset = torch.load(save_path)
+    else:
+        print(f"Creating dataset from file {input_path}...")
+        dataset = WordListDataset(input_path.open().read().splitlines())
+    
+        print(
+            f"Created dataset with vocab size {dataset.vocab_size}, "
+            f"block size {dataset.block_size}"
+        )
+        print(f"Saving dataset to {save_path}...")
+        torch.save(dataset, save_path)
     return dataset
 
 
@@ -147,69 +151,66 @@ def sample_and_print(
         print("\n".join(samples))
 
 
-@click.command()
-@click.argument("input_file", type=click.Path(exists=True))
-@click.option("--n-layers", default=4, type=int)
-@click.option("--emb-dim", default=64, type=int)
-@click.option("--n-heads", default=4, type=int)
-@click.option("--disable-cuda", is_flag=True)
-@click.option("--resume", is_flag=True)
-@click.option("--sample-only", is_flag=True)
-@click.option("--batch-size", default=32, type=int)
-@click.option("--learning-rate", default=5e-4, type=float)
-@click.option("--weight-decay", default=0.01, type=float)
-@click.option("--num-workers", default=1, type=int)
-@click.option("--max-steps", default=100_000, type=int)
-@click.option("--seed", default=0, type=int)
-def main(
-    input_file: str,
-    n_layers: int,
-    emb_dim: int,
-    n_heads: int,
-    disable_cuda: bool,
-    resume: bool,
-    sample_only: bool,
-    batch_size: int,
-    learning_rate: float,
-    weight_decay: float,
-    num_workers: int,
-    max_steps: int,
-    seed: int,
-):
-    utils.set_seed(seed)
-    device = utils.device(disable_cuda)
 
-    print(f"Building the dataset from {input_file}...")
+class Config:
+    sample_only: str = True
+    number_of_samples: int = 20
+    seed = 0
+
+    # Dataset
+    input_file: str = "data/names.txt"
+
+    # Network
+    emb_dim: int = 64
+    n_blocks: int = 4
+    n_heads: int = 4
+
+    # Optimization
+    batch_size: int = 32
+    learning_rate: float = 5e-4
+    weight_decay: float = 0.01
+    num_workers: int = 1
+    max_steps: int = 100_000
+    disable_cuda: bool = False
+    
+
+def main():
+    utils.set_seed(Config.seed)
+    device = utils.device(Config.disable_cuda)
+
     saves_path = Path(__file__).parent / "saves"
     saves_path.mkdir(exist_ok=True)
-    input_path = Path(input_file)
-    dataset = create_dataset(input_path, saves_path)
-    print(f"Dataset determined that: {dataset.vocab_size=}, {dataset.block_size=}")
+
+    input_path = Path(Config.input_file)
+    dataset_name = f"{input_path.stem}"
+    model_save_path = saves_path / f"{dataset_name}-model.pt"
+    dataset_save_path = saves_path / f"{dataset_name}-dataset.pt"
+
+    dataset = create_dataset(input_path, dataset_save_path)
     print()
 
     print("Initialising the model...")
     model = Transformer(
         vocab_size=dataset.vocab_size,
-        block_size=dataset.block_size,
-        emb_dim=emb_dim,
-        n_heads=n_heads,
-        n_layers=n_layers,
+        context_len=dataset.block_size,
+        emb_dim=Config.emb_dim,
+        n_heads=Config.n_heads,
+        n_layers=Config.n_blocks,
     )
 
-    model_path = saves_path / f'{input_path.stem}-model.pt'
-    if resume or sample_only:
-        if not model_path.exists():
-            print(f"Model state not found at {model_path}")
+    if model_save_path.exists():
+        print(f"Initializing from the existing model state {model_save_path}")
+        model.load_state_dict(torch.load(model_save_path))
+
+    if Config.sample_only:
+        if not model_save_path.exists():
+            print(f"No model file found at {model_save_path}, cannot sample")
             sys.exit(1)
-        # Note: if we sample-only then we also assume we are resuming
-        print(f"Initializing from the existing model state {model_path}")
-        model.load_state_dict(torch.load(model_path))
-    print()
-    if sample_only:
-        sample_and_print(dataset, model=model, device=device)
-        sys.exit()
-        
-    def callback(step, loss):
+        sample_and_print(dataset, model=model, device=device, num=Config.number_of_samples)
+        sys.exit(0)
+    print()  
+
+    def _callback(*_):
         sample_and_print(dataset, model=model, device=device)
 
     trainer = Trainer(
@@ -217,13 +218,15 @@ def main(
         device=device,
         train_set=dataset.train_set,
         test_set=dataset.test_set,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        learning_rate=learning_rate,
-        weight_decay=weight_decay,
-        max_steps=max_steps,
-        save_path=model_path,
-        on_batch_end=callback,
+        batch_size=Config.batch_size,
+        num_workers=Config.num_workers,
+        learning_rate=Config.learning_rate,
+        weight_decay=Config.weight_decay,
+        max_steps=Config.max_steps,
+        save_path=model_save_path,
+        summary_writer=SummaryWriter(),
+        on_start=_callback,
+        on_batch_end=_callback,
     )
     trainer.run()
 

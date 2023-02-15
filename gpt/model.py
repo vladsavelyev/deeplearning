@@ -32,7 +32,7 @@ class CasualSelfAttention(nn.Module):
     explicit implementation here to show that there is nothing too scary here.
     """
 
-    def __init__(self, n_heads, emb_dim, block_size):
+    def __init__(self, n_heads, emb_dim, context_len):
         super().__init__()
         assert emb_dim % n_heads == 0
 
@@ -46,9 +46,9 @@ class CasualSelfAttention(nn.Module):
         # input sequence
         self.register_buffer(
             "mask",
-            torch.ones((block_size, block_size))
+            torch.ones((context_len, context_len))
             .tril()
-            .view(1, 1, block_size, block_size),
+            .view(1, 1, context_len, context_len),
         )
 
         self.c_proj = nn.Linear(emb_dim, emb_dim)
@@ -78,7 +78,7 @@ class CasualSelfAttention(nn.Module):
         att = (k @ q.transpose(-2, -1)) * head_size**-0.5
 
         mask = self.mask[:, :, :T, :T]  # Making sure mask can work with T
-        # smaller than the block_size (e.g. during the generation from a single
+        # smaller than the context_len (e.g. during the generation from a single
         # character prompt where T=1)
         att = att.masked_fill(mask == 0, float("-inf"))
         att = att.softmax(-1)
@@ -97,14 +97,14 @@ class CasualSelfAttention(nn.Module):
 class Block(nn.Module):
     """Transformer block: communication followed by computation"""
 
-    def __init__(self, n_heads: int, emb_dim: int, block_size: int):
+    def __init__(self, n_heads: int, emb_dim: int, context_size: int):
         super().__init__()
         # Communication part (share info with other tokens):
         self.ln1 = nn.LayerNorm(emb_dim)
         self.attn = CasualSelfAttention(
             n_heads=n_heads,
             emb_dim=emb_dim,
-            block_size=block_size,
+            context_len=context_size,
         )
 
         # Computation part (fully-connected nn on self):
@@ -129,19 +129,19 @@ class Transformer(nn.Module):
     def __init__(
         self,
         vocab_size: int,
-        block_size: int,
+        context_len: int,
         emb_dim: int,
         n_layers: int,
         n_heads: int,
     ):
         super().__init__()
-        self.block_size = block_size
+        self.context_len = context_len
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(vocab_size, emb_dim),
-                wpe=nn.Embedding(block_size, emb_dim),
+                wpe=nn.Embedding(context_len, emb_dim),
                 blocks=nn.ModuleList(
-                    [Block(n_heads, emb_dim, block_size) for _ in range(n_layers)]
+                    [Block(n_heads, emb_dim, context_len) for _ in range(n_layers)]
                 ),
                 lnorm=nn.LayerNorm(emb_dim),
             )
@@ -157,9 +157,9 @@ class Transformer(nn.Module):
     def forward(self, x, targets=None) -> tuple[torch.Tensor, torch.Tensor | None]:
         device = x.device
         b, t = x.shape
-        assert t <= self.block_size, (
+        assert t <= self.context_len, (
             f"Cannot forward sequence of length {t}, "
-            f"block size is only {self.block_size}"
+            f"block size is only {self.context_len}"
         )
         pos = torch.arange(0, t, dtype=torch.long, device=device).unsqueeze(0)  # (1, t)
 
@@ -203,8 +203,8 @@ class Transformer(nn.Module):
         model.eval() mode of operation for this.
         """
         for _ in range(max_new_tokens):
-            # If the sequence context is growing too long we must crop it at block_size
-            context = x if x.shape[1] <= self.block_size else x[:, -self.block_size:]
+            # If the sequence context is growing too long we must crop it at context_len
+            context = x if x.shape[1] <= self.context_len else x[:, -self.context_len:]
     
             # Forward the model to get the logits for the index in the sequence
             logits, _ = self(context)

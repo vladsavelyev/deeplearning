@@ -23,6 +23,7 @@ class Trainer:
         on_batch_end: Callable[[int, float], None] | None = None,
         on_start: Callable[[], None] | None = None,
         save_path: Path | None = None,
+        summary_writer: SummaryWriter | None = None,
     ):
         self.device = device
         self.model = model.to(device)
@@ -42,7 +43,7 @@ class Trainer:
             lr=learning_rate,
             weight_decay=weight_decay,
         )
-        self.writer = SummaryWriter()
+        self.writer = summary_writer
         self.max_steps = max_steps
         self.on_batch_end = on_batch_end
         self.on_start = on_start
@@ -61,9 +62,10 @@ class Trainer:
             self.model.evaluate(subset, self.device, batch_size=100, max_batches=10)
             for subset in [self.train_set, self.test_set]
         ]
-        self.writer.add_scalar("Loss/train", train_loss, step)
-        self.writer.add_scalar("Loss/test", test_loss, step)
-        self.writer.flush()
+        if self.writer:
+            self.writer.add_scalar("Loss/train", train_loss, step)
+            self.writer.add_scalar("Loss/test", test_loss, step)
+            self.writer.flush()
         print(f"Step {step} train loss: {train_loss} test loss: {test_loss}")
 
         # Save the model to disk if it has improved
