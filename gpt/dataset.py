@@ -1,16 +1,11 @@
-import sys
+from abc import ABC, abstractmethod
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-import tiktoken
 import sentencepiece
+import tiktoken
 import torch
-from torch.utils.data import Dataset, random_split, TensorDataset, Subset
-import torchtext.datasets
-
-from gpt import utils
-from gpt.model import Transformer
-from gpt.trainer import Trainer
+from torch.utils.data import random_split, TensorDataset, Subset
 
 
 def split_dataset(dataset: TensorDataset) -> list[Subset]:

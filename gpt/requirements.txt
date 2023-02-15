@@ -6,5 +6,5 @@ numpy
 graphviz
 click
 torchtext
+tiktoken
 sentencepiece
-click-config

@@ -20,10 +20,10 @@ class Trainer:
         learning_rate: float,
         weight_decay: float,
         max_steps: int,
-        on_batch_end: Callable[[int, float], None] | None = None,
-        on_start: Callable[[], None] | None = None,
-        save_path: Path | None = None,
-        summary_writer: SummaryWriter | None = None,
+        on_batch_end: Callable[[int, float], None] = None,
+        on_start: Callable[[], None] = None,
+        save_path: Path = None,
+        summary_writer: SummaryWriter = None,
     ):
         self.device = device
         self.model = model.to(device)

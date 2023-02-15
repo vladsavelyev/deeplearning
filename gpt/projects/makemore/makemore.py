@@ -101,7 +101,7 @@ def sample_and_print(
     dataset: WordListDataset,
     model: nn.Module,
     device: torch.device,
-    top_k: int | None = None,
+    top_k: int = None,
     clean: bool = True,
     num: int = 10,
 ):

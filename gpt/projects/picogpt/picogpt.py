@@ -21,7 +21,7 @@ def sample_and_print(
     tokenizer: Tokenizer,
     model: Transformer,
     device: torch.device,
-    top_k: int | None = None,
+    top_k: int = None,
     max_new_tokens: int = 500,
     prompt: str = "Oh God! Oh God!",
 ):
@@ -44,7 +44,7 @@ def create_dataset(
     input_path: Path,
     save_path: Path,
     context_len: int,
-    input_test_path: Path | None = None,
+    input_test_path: Path = None,
 ) -> tuple[Tokenizer, TransformerDataset]:
     """
     Create or read the dataset from file if exists.

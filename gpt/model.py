@@ -3,6 +3,7 @@ Transformer Language Model (*exactly* as used in GPT-2)
 """
 
 import math
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -154,7 +155,7 @@ class Transformer(nn.Module):
         print(f"Transformer parameters: {n_params}")
         print(f"Total model parameters: {sum(p.numel() for p in self.parameters())}")
 
-    def forward(self, x, targets=None) -> tuple[torch.Tensor, torch.Tensor | None]:
+    def forward(self, x, targets=None) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
         device = x.device
         b, t = x.shape
         assert t <= self.context_len, (
@@ -194,7 +195,7 @@ class Transformer(nn.Module):
         max_new_tokens: int,
         temperature: float = 1.0,
         do_sample: bool = False,
-        top_k: int | None = None,
+        top_k: int = None,
     ) -> torch.Tensor:
         """
         Take a conditioning sequence of indices x (LongTensor of shape (b, t))
@@ -237,7 +238,7 @@ class Transformer(nn.Module):
         dataset: Dataset,
         device: torch.device,
         batch_size: int = 50,
-        max_batches: int | None = None,
+        max_batches: int = None,
     ):
         self.eval()
         losses = []
