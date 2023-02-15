@@ -73,7 +73,7 @@ class SentencePieceTokenizer(Tokenizer):
         return torch.tensor(self.enc.encode(text), dtype=torch.long)
 
     def decode(self, data: torch.Tensor) -> str:
-        return "".join("[" + self.enc.decode([v]) + "]" for v in data.tolist())
+        return "".join(self.enc.decode(data.tolist()))
 
     def vocab_size(self) -> int:
         return self.enc.vocab_size()

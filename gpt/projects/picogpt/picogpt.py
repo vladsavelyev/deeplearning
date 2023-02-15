@@ -83,7 +83,7 @@ def create_dataset(
 
 
 class Config:
-    sample_only: str = False
+    sample_only: str = True
     seed = 0
 
     # Dataset
