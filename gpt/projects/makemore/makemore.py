@@ -208,7 +208,7 @@ def main():
         if not model_save_path.exists():
             print(f"No model file found at {model_save_path}, cannot sample")
             sys.exit(1)
-        sample_and_print(dataset, model=model, device=device, num=Config.number_of_samples)
+        sample_and_print(dataset, model=model.to(device), device=device, num=Config.number_of_samples)
         sys.exit(0)
     print()  
 

@@ -145,7 +145,7 @@ def main():
         if not model_save_path.exists():
             print(f"No model file found at {model_save_path}, cannot sample")
             sys.exit(1)
-        sample_and_print(tokenizer, model=model, device=device)
+        sample_and_print(tokenizer, model=model.to(device), device=device)
         sys.exit(0)
     print()
 
