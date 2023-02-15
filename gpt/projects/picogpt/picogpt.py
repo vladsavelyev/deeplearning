@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import Tuple
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
@@ -45,7 +46,7 @@ def create_dataset(
     save_path: Path,
     context_len: int,
     input_test_path: Path = None,
-) -> tuple[Tokenizer, TransformerDataset]:
+) -> Tuple[Tokenizer, TransformerDataset]:
     """
     Create or read the dataset from file if exists.
     """

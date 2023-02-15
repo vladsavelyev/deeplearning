@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import sentencepiece
 import tiktoken
@@ -88,7 +88,7 @@ class TransformerDataset(TensorDataset):
         self.train = None
         self.test = None
 
-    def __getitem__(self, index) -> tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.data[index : index + self.context_len]
         y = self.data[index + 1 : index + self.context_len + 1]
         return x, y

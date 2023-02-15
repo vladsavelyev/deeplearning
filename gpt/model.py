@@ -3,7 +3,7 @@ Transformer Language Model (*exactly* as used in GPT-2)
 """
 
 import math
-from typing import Optional
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -155,7 +155,7 @@ class Transformer(nn.Module):
         print(f"Transformer parameters: {n_params}")
         print(f"Total model parameters: {sum(p.numel() for p in self.parameters())}")
 
-    def forward(self, x, targets=None) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def forward(self, x, targets=None) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         device = x.device
         b, t = x.shape
         assert t <= self.context_len, (
