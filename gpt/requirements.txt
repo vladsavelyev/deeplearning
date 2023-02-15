@@ -5,3 +5,5 @@ matplotlib
 numpy
 graphviz
 click
+torchtext
+sentencepiece
