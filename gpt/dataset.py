@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import List
 
 import sentencepiece
 import tiktoken
@@ -8,7 +9,7 @@ import torch
 from torch.utils.data import random_split, TensorDataset, Subset
 
 
-def split_dataset(dataset: TensorDataset) -> list[Subset]:
+def split_dataset(dataset: TensorDataset) -> List[Subset]:
     """
     Partition the input data into a training and the test set
     10% of the training set, or up to 1000 examples

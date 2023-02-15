@@ -1,6 +1,8 @@
 import sys
 from collections import namedtuple
 from pathlib import Path
+from typing import List
+
 import click
 
 import torch
@@ -17,7 +19,7 @@ class WordListDataset(TensorDataset):
     """
     List of words, tokenized on the character level
     """
-    def __init__(self, words: list[str]):
+    def __init__(self, words: List[str]):
         words = [w.strip() for w in words]  # Get rid of any leading/trailing space
         words = [w for w in words if w]  # Get rid of any empty strings
         
@@ -73,7 +75,7 @@ class WordListDataset(TensorDataset):
     def encode(self, text: str) -> torch.Tensor:
         return torch.tensor([self.stoi[t] for t in text], dtype=torch.long)
 
-    def decode(self, ints: list[int]) -> str:
+    def decode(self, ints: List[int]) -> str:
         return "".join(self.itos[i] for i in ints)
 
 
@@ -124,7 +126,7 @@ def sample_and_print(
 
     for sample_i in range(x_sampled.shape[0]):
         # Get the sample_i'th row of sampled integers, as a Python list
-        row: list[int] = x_sampled[sample_i].tolist()
+        row: List[int] = x_sampled[sample_i].tolist()
 
         if clean:
             # Token "0" is also the <STOP> token, so we crop the output sequence
