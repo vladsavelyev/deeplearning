@@ -8,3 +8,5 @@ click
 torchtext
 tiktoken
 sentencepiece
+transformers
+datasets
