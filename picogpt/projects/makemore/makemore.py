@@ -10,9 +10,9 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, random_split
 from torch.utils.tensorboard import SummaryWriter
 
-from gpt import utils
-from gpt.model import Transformer
-from gpt.trainer import Trainer
+from picogpt import utils
+from picogpt.model import Transformer
+from picogpt.trainer import Trainer
 
 
 class WordListDataset(TensorDataset):

@@ -5,8 +5,8 @@ from typing import Tuple
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from gpt import utils
-from gpt.dataset import (
+from picogpt import utils
+from picogpt.dataset import (
     Tokenizer,
     TransformerDataset,
     CharTokenizer,
@@ -14,8 +14,8 @@ from gpt.dataset import (
     SentencePieceTokenizer,
     split_dataset,
 )
-from gpt.model import Transformer
-from gpt.trainer import Trainer
+from picogpt.model import Transformer
+from picogpt.trainer import Trainer
 
 
 def sample_and_print(
