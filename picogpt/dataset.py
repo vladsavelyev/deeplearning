@@ -1,12 +1,13 @@
 from abc import ABC, abstractmethod
-from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Tuple
 
-import sentencepiece
-import tiktoken
 import torch
 from torch.utils.data import random_split, TensorDataset, Subset
+
+import sentencepiece
+import tiktoken
+from tokenizers import ByteLevelBPETokenizer
 
 
 def split_dataset(dataset: TensorDataset) -> List[Subset]:
@@ -64,19 +65,42 @@ class TiktokenTokenizer(Tokenizer):
 
 
 class SentencePieceTokenizer(Tokenizer):
-    def __init__(self, text_path: Path):
+    def __init__(self, text_path: Path, vocab_size=2000):
         prefix = str(text_path.with_suffix("")) + "-sp"
-        sentencepiece.SentencePieceTrainer.Train(input=text_path, model_prefix=prefix)
+        sentencepiece.SentencePieceTrainer.Train(
+            input=text_path, model_prefix=prefix, vocab_size=vocab_size
+        )
+        # noinspection PyArgumentList
         self.enc = sentencepiece.SentencePieceProcessor(model_file=prefix + ".model")
 
     def encode(self, text: str) -> torch.Tensor:
+        # noinspection PyUnresolvedReferences
         return torch.tensor(self.enc.encode(text), dtype=torch.long)
 
     def decode(self, data: torch.Tensor) -> str:
+        # noinspection PyUnresolvedReferences
         return "".join(self.enc.decode(data.tolist()))
 
     def vocab_size(self) -> int:
         return self.enc.vocab_size()
+
+
+class HuggingFaceTokenizer(Tokenizer):
+    def __init__(self, text_path: Path, vocab_size=2000):
+        self._t = ByteLevelBPETokenizer()
+        self._t.train(
+            files=[str(text_path)], vocab_size=vocab_size, min_frequency=2
+        )
+        self._t.save_model(str(text_path.parent), f"{text_path.stem}-hf")
+
+    def encode(self, text: str) -> torch.Tensor:
+        return torch.tensor(self._t.encode(text).ids, dtype=torch.long)
+
+    def decode(self, data: torch.Tensor) -> str:
+        return "".join(self._t.decode(data.tolist()))
+
+    def vocab_size(self) -> int:
+        return self._t.get_vocab_size()
 
 
 class TransformerDataset(TensorDataset):

@@ -10,3 +10,4 @@ tiktoken
 sentencepiece
 transformers
 datasets
+tokenizers

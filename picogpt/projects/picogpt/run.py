@@ -12,6 +12,7 @@ from picogpt.dataset import (
     CharTokenizer,
     TiktokenTokenizer,
     SentencePieceTokenizer,
+    HuggingFaceTokenizer,
     split_dataset,
 )
 from picogpt.model import Transformer
@@ -45,6 +46,7 @@ def create_dataset(
     input_path: Path,
     save_path: Path,
     context_len: int,
+    vocab_size: int | None = None,
     input_test_path: Path = None,
 ) -> Tuple[Tokenizer, TransformerDataset]:
     """
@@ -52,11 +54,13 @@ def create_dataset(
     """
     print(f"Initializing tokenizer {tokenizer} based on {input_path}...")
     if tokenizer == "tiktoken":
-        tokenizer = TiktokenTokenizer()
+        tokenizer = TiktokenTokenizer(encoding_name="gpt2")
     elif tokenizer == "char":
         tokenizer = CharTokenizer(input_path.open().read())
     elif tokenizer == "sentencepiece":
-        tokenizer = SentencePieceTokenizer(input_path)
+        tokenizer = SentencePieceTokenizer(input_path, vocab_size=vocab_size)
+    elif tokenizer == "huggingface":
+        tokenizer = HuggingFaceTokenizer(input_path, vocab_size=vocab_size)
     print(f"Inferred vocabulary size: {tokenizer.vocab_size()}")
 
     if save_path.exists():
@@ -92,6 +96,7 @@ class Config:
     input_test_file = None
     # input_file: str = "../../data/wikitext-103-raw/wiki.train.raw"
     # input_test_file: str = "../../data/wikitext-103-raw/wiki.test.raw"
+    vocab_size: int = 2000
 
     # Network
     context_len: int = 32
@@ -126,6 +131,7 @@ def main():
         input_test_path=Path(Config.input_test_file) if Config.input_test_file else None,
         save_path=dataset_save_path,
         context_len=Config.context_len,
+        vocab_size=Config.vocab_size,
     )
     print()
 
