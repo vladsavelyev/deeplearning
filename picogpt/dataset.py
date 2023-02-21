@@ -7,7 +7,7 @@ from torch.utils.data import random_split, TensorDataset, Subset
 
 import sentencepiece
 import tiktoken
-from tokenizers import ByteLevelBPETokenizer
+from tokenizers.implementations import ByteLevelBPETokenizer
 
 
 def split_dataset(dataset: TensorDataset) -> List[Subset]:

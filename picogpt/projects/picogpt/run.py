@@ -86,16 +86,33 @@ def create_dataset(
     return tokenizer, dataset
 
 
+datasets_path = (
+    next(
+        Path(p)
+        for p in ["/Users/vlad/googledrive", "/content/drive/MyDrive"]
+        if Path(p).exists()
+    )
+    / "AI/datasets"
+)
+runs_saves_root = next(
+    Path(p)
+    for p in ["/content/drive/MyDrive/AI/hipogpt", Path(__file__).parent]
+    if Path(p).exists()
+)
+saves_path = runs_saves_root / "saves"
+runs_path = runs_saves_root / "runs"
+saves_path.mkdir(exist_ok=True)
+runs_path.mkdir(exist_ok=True)
+
+
 class Config:
-    sample_only: str = True
+    sample_only: str = False
     seed = 0
 
     # Dataset
     tokenizer: str = "sentencepiece"
-    input_file: str = "../../data/tinyshakespeare.txt"
+    input_path = datasets_path / "tinyshakespeare" / "tinyshakespeare.txt"
     input_test_file = None
-    # input_file: str = "../../data/wikitext-103-raw/wiki.train.raw"
-    # input_test_file: str = "../../data/wikitext-103-raw/wiki.test.raw"
     vocab_size: int = 2000
 
     # Network
@@ -117,17 +134,13 @@ def main():
     utils.set_seed(Config.seed)
     device = utils.device(Config.disable_cuda)
 
-    saves_path = Path(__file__).parent / "saves"
-    saves_path.mkdir(exist_ok=True)
-
-    input_path = Path(Config.input_file)
-    dataset_name = f"{input_path.stem}-{Config.tokenizer}"
+    dataset_name = f"{Config.input_path.stem}-{Config.tokenizer}"
     model_save_path = saves_path / f"{dataset_name}-model.pt"
     dataset_save_path = saves_path / f"{dataset_name}-dataset.pt"
 
     tokenizer, dataset = create_dataset(
         tokenizer=Config.tokenizer,
-        input_path=input_path,
+        input_path=Config.input_path,
         input_test_path=Path(Config.input_test_file) if Config.input_test_file else None,
         save_path=dataset_save_path,
         context_len=Config.context_len,
