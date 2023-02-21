@@ -1,0 +1,9 @@
+torch
+tensorboard
+jupyter
+graphviz
+click
+torchtext
+transformers
+datasets
+tokenizers
