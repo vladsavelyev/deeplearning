@@ -49,51 +49,74 @@ def helper_to_find_first_paragraphs(paragraphs, title, book_number, n=30):
 
 
 def main():
-    root = Path("../data")
+    basedir = Path("/Users/vlad/googledrive/AI/datasets/murakami")
 
-    with open(root / "murakami.txt", "w") as f:
-        for bi, path in enumerate((root / "murakami_fb2s").glob("*.fb2")):
-            print(bi, path)
+    text_by_name = {}
 
-            # Load the FB2 format file
-            with path.open("rb") as file:
-                fb2_data = file.read()
+    for bi, path in enumerate((basedir / "fb2").glob("*.fb2")):
+        print(bi, path)
 
-            # Print structure of the FB2 format file
-            # print(etree.tostring(etree.fromstring(fb2_data), pretty_print=True))
+        # Load the FB2 format file
+        with path.open("rb") as file:
+            fb2_data = file.read()
 
-            # Parse the FB2 format file using lxml
-            root = etree.fromstring(fb2_data)
+        # Print structure of the FB2 format file
+        # print(etree.tostring(etree.fromstring(fb2_data), pretty_print=True))
 
-            # Print the title of the book
-            title = root.xpath(
-                "//fb:title-info/fb:book-title",
-                namespaces={"fb": "http://www.gribuser.ru/xml/fictionbook/2.0"},
-            )[0].text
-            print(title)
+        # Parse the FB2 format file using lxml
+        root = etree.fromstring(fb2_data)
 
-            paragraphs = root.xpath(
-                "//fb:p",
-                namespaces={"fb": "http://www.gribuser.ru/xml/fictionbook/2.0"},
-            )
+        # Print the title of the book
+        title = root.xpath(
+            "//fb:title-info/fb:book-title",
+            namespaces={"fb": "http://www.gribuser.ru/xml/fictionbook/2.0"},
+        )[0].text
+        print(title)
 
-            # helper_to_find_first_paragraphs(paragraphs, title, bi)
+        paragraphs = root.xpath(
+            "//fb:p",
+            namespaces={"fb": "http://www.gribuser.ru/xml/fictionbook/2.0"},
+        )
 
-            found_paragraphs = []
-            skipping = True
-            for pi, p in enumerate(paragraphs):
-                if p.text is None:
-                    continue
-                if bi in start_paragraphs and pi >= start_paragraphs[bi]:
-                    skipping = False
-                if skipping and p.text.lower() == title.lower():
-                    skipping = False
-                if not skipping:
-                    found_paragraphs.append(p)
-            print(f"Found {len(found_paragraphs)} paragraphs")
-            for p in found_paragraphs:
-                f.write(p.text.replace(' ', ' ') + "\n")
-            f.write("\n")
+        # helper_to_find_first_paragraphs(paragraphs, title, bi)
+
+        found_paragraphs = []
+        skipping = True
+        for pi, p in enumerate(paragraphs):
+            if p.text is None:
+                continue
+            if bi in start_paragraphs and pi >= start_paragraphs[bi]:
+                skipping = False
+            if skipping and p.text.lower() == title.lower():
+                skipping = False
+            if not skipping:
+                found_paragraphs.append(p)
+        print(f"Found {len(found_paragraphs)} paragraphs")
+
+        text_by_name[title] = ""
+        for p in found_paragraphs:
+            text_by_name[title] += p.text.replace(" ", " ") + "\n"
+        text_by_name[title] += "\n"
+
+    assert text_by_name
+
+    print("Novel by size:")
+    for title, text in text_by_name.items():
+        print(f"  {title}: {len(text):,} characters")
+
+    smallest_title = min(text_by_name, key=lambda k: len(text_by_name[k]))
+    print(
+        f"Using smallest novel {smallest_title} "
+        f"({len(text_by_name[smallest_title]):,} characters) as a test set"
+    )
+
+    with open(basedir / "murakami_train.txt", "w") as f:
+        for title, text in text_by_name.items():
+            if title != smallest_title:
+                f.write(text)
+
+    with open(basedir / "murakami_test.txt", "w") as f:
+        f.write(text_by_name[smallest_title])
 
 
 if __name__ == "__main__":
