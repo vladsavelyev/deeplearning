@@ -1,0 +1,5 @@
+torch
+PyGuitarPro
+transformers
+datasets
+tqdm
