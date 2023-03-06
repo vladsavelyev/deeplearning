@@ -23,17 +23,16 @@ class TransformerDataset(Dataset):
         self.n_ctx = n_ctx
 
     def __getitem__(self, idx):
-        x = torch.LongTensor(self.token_ids[idx:idx + self.n_ctx])
-        y = torch.LongTensor(self.token_ids[idx + 1:idx + 1 + self.n_ctx])
-        return {"input_ids": x, "labels": y}
+        t = torch.LongTensor(self.token_ids[idx:idx + self.n_ctx])
+        return {"input_ids": t, "labels": t}
 
     def __len__(self):
-        return len(self.token_ids) - self.n_ctx
+        return len(self.token_ids) - self.n_ctx + 1
 
     @staticmethod
-    def load(path, tokenizer, n_ctx: int) -> 'TransformerDataset':
+    def load(path, tokenizer, n_ctx: int, max_n_examples: int = None) -> 'TransformerDataset':
         save_path = path.with_suffix(".token_ids.pt")
-        if save_path.exists():
+        if False and save_path.exists():
             print(f"Loading dataset from {save_path}")
             ids = torch.load(str(save_path))
         else:
@@ -41,6 +40,10 @@ class TransformerDataset(Dataset):
                 text = f.read()
                 print(f"Characters in text: {len(text):,}")
             ids = tokenizer(text, return_tensors="pt")['input_ids'].squeeze().long()
+            if max_n_examples:
+                max_tokens = max_n_examples + n_ctx - 1
+                print(f"Taking first {max_tokens} tokens to make it {max_n_examples} examples")
+                ids = ids[:max_tokens]
             eos = torch.tensor([tokenizer.eos_token_id]).long()
             ids = torch.concat((ids, eos))
             torch.save(ids, save_path)
@@ -60,16 +63,11 @@ if last_checkpoint_dir := get_last_checkpoint(str(save_dir)):
     last_checkpoint_dir = Path(last_checkpoint_dir)
     print([t.name for t in last_checkpoint_dir.iterdir()])
 
-
-os.environ['WANDB_API_KEY'] = '270e81630bd1fd3c78a355d1711966c75ce75bcc'
-os.environ["WANDB_NOTEBOOK_NAME"] = "pretgpt"
-
-
-def sample(num_seqs=10):
+def sample(num_seqs=10, max_length=10):
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
     for i, seq in enumerate(model.generate(
-        max_length=10,
+        max_length=max_length,
         top_p=0.95,
         num_return_sequences=num_seqs,
         do_sample=True, 
@@ -78,32 +76,35 @@ def sample(num_seqs=10):
         eos_token_id=tokenizer.eos_token_id,
         bos_token_id=tokenizer.bos_token_id,
     )):
-        print(i, tokenizer.decode(seq))
+        print(i + 1, tokenizer.decode(seq))
 
 
 class MyCallback(TrainerCallback):
-    def on_save(self, args, state, control, **kwargs):
+    def on_evaluate(self, args, state, control, metrics, **kwargs):
+        if metrics:
+            print(f'Eval loss so far: {metrics["eval_loss"]:.4f}')
+        if state.best_metric:
+            print(f"Best loss so far: {state.best_metric:.4f}")
         sample()
-
 
 trainer = Trainer(
     model=model,
+    train_dataset=train_set,
+    eval_dataset=test_set,
+    callbacks=[MyCallback],
     args=TrainingArguments(
         output_dir=str(save_dir),
-        report_to=['wandb'],
-        evaluation_strategy="epoch",
+        report_to=['wandb'] if os.getenv("WANDB_API_KEY") else None,
         overwrite_output_dir=True,
-        eval_steps=500,
-        save_steps=500,
+        evaluation_strategy="steps",
+        eval_steps=1000,
+        save_steps=1000,
         save_total_limit=2,
         per_device_train_batch_size=2,
         per_device_eval_batch_size=2,
         ignore_data_skip=True,
     ),
-    train_dataset=train_set,
-    callbacks=[MyCallback],
 )
-# trainer.train(resume_from_checkpoint=last_checkpoint_dir)
-trainer.train()
+trainer.train(resume_from_checkpoint=last_checkpoint_dir)
 
 
