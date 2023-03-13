@@ -1,3 +1,6 @@
 [submodule "scribepod"]
 	path = scribepod
 	url = git@github.com:vladsavelyev/scribepod.git
+[submodule "gtp_gpt/alphaTab"]
+	path = gtp_gpt/alphaTab
+	url = git@github.com:vladsavelyev/alphaTab.git
