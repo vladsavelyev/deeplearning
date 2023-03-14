@@ -3,5 +3,4 @@ jupyter
 transformers
 datasets
 tokenizers
-evaluate
-sklearn  # for evluate/accuracy
+peft
