@@ -120,7 +120,10 @@ def main():
         ),
     )
     trainer.train(resume_from_checkpoint=last_checkpoint_dir)
-    
+
+    import loralib as lora
+    lora.mark_only_lora_as_trainable(model)
+
 
 if __name__ == "__main__":
     main()
