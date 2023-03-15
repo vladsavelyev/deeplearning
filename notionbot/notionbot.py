@@ -2,6 +2,7 @@ import os
 import fire
 import requests
 from pathlib import Path
+import coloredlogs
 from llama_index import GPTSimpleVectorIndex, NotionPageReader
 from llama_index.readers import notion
 from llama_index.readers.schema.base import Document
@@ -9,7 +10,6 @@ from llama_index import LLMPredictor, GPTSimpleVectorIndex
 from langchain import OpenAI
 from langchain.agents import Tool, initialize_agent
 from langchain.chains.conversation.memory import ConversationBufferMemory
-import coloredlogs
 
 coloredlogs.install(level="INFO")
 
@@ -17,9 +17,9 @@ coloredlogs.install(level="INFO")
 def main(database_id: str):
     """
     Usage:
-        python query_notion.py <notion database id>
+        python notionbot.py <notion database id>
     Example:
-        python query_notion.py 8405f70a85b44fe7a211a0a56c0d4cc4
+        python notionbot.py 8405f70a85b44fe7a211a0a56c0d4cc4
         > "Что я делал 14 марта 2022 года?"
         Ходил в магазин за хлебом
     """

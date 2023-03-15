@@ -9,3 +9,4 @@ Studying and playing with AI.
 	* [hipogpt](hipogpt): another step further: using HuggingFace `transformers` library to train.
 * [pretgpt](pretgpt): fine-tuning a pre-trained GPT2 to generate Murakami texts.
 * [scribepod](scribepod): forking and playing with scribepod to generate a podcast about bioinformatics papers.
+* [notionbot](notionbot/notionbot.py): using [llama-index](https://gpt-index.readthedocs.io/en/latest/index.html), [langchain](https://langchain.readthedocs.io/en/latest/) and a Notion API to build a bot based on a content of a Notion database without fine-tuning.
