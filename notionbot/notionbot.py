@@ -7,6 +7,7 @@ from llama_index import GPTSimpleVectorIndex, NotionPageReader
 from llama_index.readers import notion
 from llama_index.readers.schema.base import Document
 from llama_index import LLMPredictor, GPTSimpleVectorIndex
+from llama_index.indices.base import BaseGPTIndex
 from langchain import OpenAI
 from langchain.agents import Tool, initialize_agent
 from langchain.chains.conversation.memory import ConversationBufferMemory
@@ -25,7 +26,7 @@ def main(database_id: str):
     """
     llm = OpenAI(
         temperature=0, model_name="gpt-3.5-turbo"
-    )  # defauts to text-davinci-003
+    )  # type: ignore  # defauts to text-davinci-003
     index = build_index_for_notion_db(database_id, llm=llm)
 
     # Tools that the AI (agent) can use if needed
@@ -47,19 +48,22 @@ def main(database_id: str):
     )
 
     while True:
-        query = input("Enter query: ")
+        try:
+            query = input("Enter query: ")
+        except KeyboardInterrupt:
+            break
         response = agent_chain.run(query)
         print(response)
 
 
-def build_index_for_notion_db(database_id: str, llm=None) -> GPTSimpleVectorIndex:
+def build_index_for_notion_db(database_id: str, llm=None) -> BaseGPTIndex:
     """
     Build a Llama-index from a Notion database {database_id}
     """
-    save_path = Path(f"saves/{database_id}.json")
+    save_path = Path(__file__).parent / "saves" / f"{database_id}.json"
     if save_path.exists():
         print(f"Loading index from {save_path}")
-        return GPTSimpleVectorIndex.load_from_disk(save_path)
+        return GPTSimpleVectorIndex.load_from_disk(str(save_path))
 
     print(f"Loading data from the database {database_id}")
     loader = NotionPageReader(os.environ["NOTION_TOKEN"])
@@ -90,7 +94,7 @@ def build_index_for_notion_db(database_id: str, llm=None) -> GPTSimpleVectorInde
 
     print("Indexing documents")
     index = GPTSimpleVectorIndex(docs, llm_predictor=LLMPredictor(llm) if llm else None)
-    index.save_to_disk(save_path)
+    index.save_to_disk(str(save_path))
     return index
 
 
