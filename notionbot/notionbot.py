@@ -11,6 +11,7 @@ import sqlite3
 from llama_index import (
     GPTSQLStructStoreIndex,
     LLMPredictor,
+    Prompt,
     SQLDatabase,
 )
 from llama_index.readers.schema.base import Document
@@ -44,7 +45,7 @@ def main(csv_path: str):
     llm = OpenAI(temperature=0, model_name="gpt-3.5-turbo")  # type: ignore
 
     # Build a unstructured+structured Llama index.
-    index = build_index(Path(csv_path), llm)
+    index = build_index(Path(csv_path), LLMPredictor(llm))
 
     # Build a Langchain agent that will use our index as a tool.
     agent = build_agent(index, llm)
@@ -58,7 +59,7 @@ def main(csv_path: str):
         print(response)
 
 
-def build_index(csv_path: Path, llm: BaseLLM) -> BaseGPTIndex:
+def build_index(csv_path: Path, llm_predictor: LLMPredictor) -> BaseGPTIndex:
     """
     Build a Llama-index from a CSV database.
 
@@ -73,12 +74,19 @@ def build_index(csv_path: Path, llm: BaseLLM) -> BaseGPTIndex:
     * GPTSQLStructStoreIndex both takes unstrucutred data and structured SQL entries, which like what we need for a table-like data. It still would make an expensive query per each entry, however, we can aggregate them per-month.
     It still should fit the context length, and keep the total number of documents, and this ChatGPT queries, low.
     """
+    TABLE_NAME = "days"
+
     # Will write two intermediate files:
     db_path = csv_path.with_suffix(".db")
     index_path = csv_path.with_suffix(".json")
     if db_path.exists() and index_path.exists():
         print(f"Loading existing index from disk {index_path} (db: {db_path})")
-        return GPTSQLStructStoreIndex.load_from_disk(str(index_path))
+        return GPTSQLStructStoreIndex.load_from_disk(
+            str(index_path),
+            sql_database=SQLDatabase(create_engine(f"sqlite:///{db_path}")),
+            table_name=TABLE_NAME,
+            llm_predictor=llm_predictor,
+        )
 
     # Pre-process the dataframe
     df = pd.read_csv(csv_path)
@@ -89,7 +97,7 @@ def build_index(csv_path: Path, llm: BaseLLM) -> BaseGPTIndex:
     df = df.loc[:, ~df.columns.str.contains(r"\[")]
 
     # Fix column names with special characters:
-    df.columns = df.columns.str.replace(r"\s", "_")
+    df.columns = df.columns.str.replace(r"\s", "_", regex=True)
 
     # Fix relation fields (they are exported as URLs instead of titles)
     def _fix_relation_fields(x):
@@ -109,7 +117,6 @@ def build_index(csv_path: Path, llm: BaseLLM) -> BaseGPTIndex:
 
     # Save the CSV to a database
     conn = sqlite3.connect(db_path)
-    TABLE_NAME = "days"
     df.to_sql(TABLE_NAME, conn, if_exists="replace", index=True)
     conn.close()
 
@@ -120,13 +127,14 @@ def build_index(csv_path: Path, llm: BaseLLM) -> BaseGPTIndex:
     df["MonthYear"] = pd.to_datetime(df["Date"]).dt.to_period("M")
     df["Journal"] = df["Date"] + "\n\n" + df["Journal"]
     monthly = df.groupby("MonthYear").agg({"Journal": ";".join})
+
     docs = [Document(journal) for journal in monthly["Journal"]]
 
     index = GPTSQLStructStoreIndex(
         docs,
         sql_database=SQLDatabase(create_engine(f"sqlite:///{db_path}")),
         table_name=TABLE_NAME,
-        llm_predictor=LLMPredictor(llm),
+        llm_predictor=llm_predictor,
     )
     index.save_to_disk(str(index_path))
     return index
