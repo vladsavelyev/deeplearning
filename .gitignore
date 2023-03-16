@@ -1,9 +1,10 @@
 *.pyc
 __pycache__
-venv
 .idea
-*.gz
 .DS_Store
-playground
-data
+venv
 .vscode
+data
+saves
+playground
+playground.py
