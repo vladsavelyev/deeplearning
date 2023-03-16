@@ -1,130 +1,156 @@
 import os
 from typing import Type
-import fire
 import requests
 from pathlib import Path
+import re
+
+import fire
 import coloredlogs
+import pandas as pd
+import sqlite3
 from llama_index import (
-    GPTListIndex,
-    GPTSimpleVectorIndex,
-    GPTTreeIndex,
+    GPTSQLStructStoreIndex,
+    LLMPredictor,
+    SQLDatabase,
 )
 from llama_index.readers.schema.base import Document
-from llama_index import LLMPredictor, GPTSimpleVectorIndex
 from llama_index.indices.base import BaseGPTIndex
 from langchain import OpenAI
+from langchain.llms.base import BaseLLM
 from langchain.agents import Tool, initialize_agent
+from langchain.agents.agent import AgentExecutor
 from langchain.chains.conversation.memory import ConversationBufferMemory
+from sqlalchemy import create_engine
 
 coloredlogs.install(level="DEBUG")
 
 
-def main(database_id: str):
+def main(csv_path: str):
     """
-    Usage:
-        python notionbot.py <notion database id>
-    Example:
-        python notionbot.py 8405f70a85b44fe7a211a0a56c0d4cc4
-        > "Что я делал 22 февраля 2022 года?"
-        Ходил в магазин за хлебом
-    """
-    llm = OpenAI(
-        temperature=0, model_name="gpt-3.5-turbo"
-    )  # type: ignore  # defauts to text-davinci-003
-    index = build_index_for_notion_db(database_id, index_cls=GPTListIndex, llm=llm)
-    # index = build_index_for_notion_db(database_id, GPTTreeIndex, llm=llm)
+    Argument: a path to a CSV file with required entries "Date" and "Journal", e.g. exported from a Notion database.
 
-    # Tools that the AI (agent) can use if needed
-    when_to_use_the_tool = """
-    this tool is useful when you need to answer questions about the author. For example, if I ask you a question about myself, my activities in the past, or other things that only I would know, you can redirect this question to the tool "GPT Index".
-    """
-    tools = [
-        Tool(
-            name="GPT Index",
-            func=lambda q: str(index.query(q)),
-            description=when_to_use_the_tool,  # for AI to understand when to use the tool
-            return_direct=True,
-        ),
-    ]
+    It will build a corresponding SQL database and a correspondng JSON llama-index, whichyou can query with the following questions:
 
-    memory = ConversationBufferMemory(memory_key="chat_history")
-    agent_chain = initialize_agent(
-        tools, llm, agent="conversational-react-description", memory=memory
-    )
+    > "Что я делал 22 февраля 2022 года?"
+    Играл в теннис.
+
+    > "Сколько раз я играл в теннис в 2022 году?"
+    22 раза.
+
+    > "В какие дни?"
+    Apr 1, Apr 17, May 4, ...
+    """
+    # Use the turbo ChatGPT which is 10x cheeper.
+    llm = OpenAI(temperature=0, model_name="gpt-3.5-turbo")  # type: ignore
+
+    # Build a unstructured+structured Llama index.
+    index = build_index(Path(csv_path), llm)
+
+    # Build a Langchain agent that will use our index as a tool.
+    agent = build_agent(index, llm)
 
     while True:
         try:
             query = input("Enter query: ")
         except KeyboardInterrupt:
             break
-        response = agent_chain.run(query)
+        response = agent.run(query)
         print(response)
 
 
-NOTION_HEADERS = {
-    "Authorization": "Bearer " + os.environ["NOTION_TOKEN"],
-    "Notion-Version": "2022-06-28",
-    "Content-Type": "application/json",
-}
-
-
-def build_index_for_notion_db(
-    database_id: str, index_cls: Type = GPTSimpleVectorIndex, llm=None
-) -> BaseGPTIndex:
+def build_index(csv_path: Path, llm: BaseLLM) -> BaseGPTIndex:
     """
-    Build a Llama-index from a Notion database {database_id}
+    Build a Llama-index from a CSV database.
+
+    Llama index provides multiple ways to index the data.
+
+    * GPTSimpleVectorIndex only gives AI the most top K similar documents as determined from embeddings, exluding everything else from the context. So there is no way to answer statistical questions.
+
+    * GPTListIndex iterates over each page (with optional filters), making an expensive ChatGPT query for each journal entry.
+
+    * GPTTreeIndex recursively summarizes groups of journal entries, essentially removing statistics that could be collected from daily entries.
+
+    * GPTSQLStructStoreIndex both takes unstrucutred data and structured SQL entries, which like what we need for a table-like data. It still would make an expensive query per each entry, however, we can aggregate them per-month.
+    It still should fit the context length, and keep the total number of documents, and this ChatGPT queries, low.
     """
-    save_path = (
-        Path(__file__).parent / "saves" / f"{database_id}_{index_cls.__name__}.json"
+    # Will write two intermediate files:
+    db_path = csv_path.with_suffix(".db")
+    index_path = csv_path.with_suffix(".json")
+    if db_path.exists() and index_path.exists():
+        print(f"Loading existing index from disk {index_path} (db: {db_path})")
+        return GPTSQLStructStoreIndex.load_from_disk(str(index_path))
+
+    # Pre-process the dataframe
+    df = pd.read_csv(csv_path)
+
+    df = df.dropna(subset=["Date", "Journal"])
+
+    # Removing [OLD] and [MOVED] columns
+    df = df.loc[:, ~df.columns.str.contains(r"\[")]
+
+    # Fix column names with special characters:
+    df.columns = df.columns.str.replace(r"\s", "_")
+
+    # Fix relation fields (they are exported as URLs instead of titles)
+    def _fix_relation_fields(x):
+        if isinstance(x, str):
+            vals = []
+            for v in x.split(", "):
+                if v.startswith("https://www.notion.so/"):
+                    v = re.sub(r"https://www.notion.so/([\w-]+)-\w+", r"\1", v)
+                    v = v.replace("-", " ")
+                    if v.startswith("https://www.notion.so/"):
+                        continue
+                vals.append(v)
+            x = "; ".join(vals)
+        return x
+
+    df = df.applymap(_fix_relation_fields)
+
+    # Save the CSV to a database
+    conn = sqlite3.connect(db_path)
+    TABLE_NAME = "days"
+    df.to_sql(TABLE_NAME, conn, if_exists="replace", index=True)
+    conn.close()
+
+    # Getting our unstructured documents for an index. We don't want a document
+    # for each entry, as it would lead to a lot of ChatGPT queries. So we aggregate
+    # document per month. That shouldn't exceed the ChatGPT context length, and
+    # should keep the number of documetns limited.
+    df["MonthYear"] = pd.to_datetime(df["Date"]).dt.to_period("M")
+    df["Journal"] = df["Date"] + "\n\n" + df["Journal"]
+    monthly = df.groupby("MonthYear").agg({"Journal": ";".join})
+    docs = [Document(journal) for journal in monthly["Journal"]]
+
+    index = GPTSQLStructStoreIndex(
+        docs,
+        sql_database=SQLDatabase(create_engine(f"sqlite:///{db_path}")),
+        table_name=TABLE_NAME,
+        llm_predictor=LLMPredictor(llm),
     )
-    if save_path.exists():
-        print(f"Loading index from {save_path}")
-        return index_cls.load_from_disk(str(save_path))
-
-    print(f"Loading data from the database {database_id}, will write to {save_path}")
-    cursor = None
-    page_num = 0
-    docs = []
-    while True:
-        page_num += 1
-        print(f"Loading page #{page_num}")
-        resp = requests.post(
-            f"https://api.notion.com/v1/databases/{database_id}/query",
-            headers=NOTION_HEADERS,
-            json={"start_cursor": cursor} if cursor else {},
-        )
-        if resp.status_code != 200:
-            raise ValueError(
-                f"Failed to load data from the database, response: {resp.json()}"
-            )
-        for page in resp.json()["results"]:
-            if (d := page["properties"]["Date"].get("date")) and (
-                rt := page["properties"]["Journal"]["rich_text"]
-            ):
-                journal = rt[0]["text"]["content"]
-                docs.append(
-                    Document(
-                        journal,
-                        extra_info={
-                            "Дата": d["start"],
-                            "Ключевые слова": ", ".join(
-                                w["name"]
-                                for w in page["properties"]["Key words"]["multi_select"]
-                            ),
-                            "Тренировки": ", ".join(
-                                w["name"]
-                                for w in page["properties"]["Workout"]["multi_select"]
-                            ),
-                        },
-                    )
-                )
-        if not (cursor := resp.json().get("next_cursor")):
-            break
-
-    print("Indexing documents")
-    index = index_cls(docs, llm_predictor=LLMPredictor(llm) if llm else None)
-    index.save_to_disk(str(save_path))
+    index.save_to_disk(str(index_path))
     return index
+
+
+def build_agent(index: BaseGPTIndex, llm: BaseLLM) -> AgentExecutor:
+    """
+    Build a Langchain agent that can can use index as a tool.
+    """
+    tool = Tool(
+        name="GPT Index",
+        func=lambda q: str(index.query(q)),
+        # For AI to understand when to use the tool:
+        description="""
+        this tool is useful when you need to answer questions about the author. For example, if I ask you a question about myself, my activities in the past, or other things that only I would know, you can redirect this question to the tool "GPT Index".
+        """,
+        return_direct=True,
+    )
+    return initialize_agent(
+        tools=[tool],
+        llm=llm,
+        agent="conversational-react-description",
+        memory=ConversationBufferMemory(memory_key="chat_history"),
+    )
 
 
 if __name__ == "__main__":
