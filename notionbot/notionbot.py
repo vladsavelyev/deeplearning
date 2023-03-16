@@ -8,9 +8,7 @@ from llama_index import (
     GPTListIndex,
     GPTSimpleVectorIndex,
     GPTTreeIndex,
-    NotionPageReader,
 )
-from llama_index.readers import notion
 from llama_index.readers.schema.base import Document
 from llama_index import LLMPredictor, GPTSimpleVectorIndex
 from llama_index.indices.base import BaseGPTIndex
@@ -27,7 +25,7 @@ def main(database_id: str):
         python notionbot.py <notion database id>
     Example:
         python notionbot.py 8405f70a85b44fe7a211a0a56c0d4cc4
-        > "Что я делал 14 марта 2022 года?"
+        > "Что я делал 22 февраля 2022 года?"
         Ходил в магазин за хлебом
     """
     llm = OpenAI(
@@ -63,6 +61,13 @@ def main(database_id: str):
         print(response)
 
 
+NOTION_HEADERS = {
+    "Authorization": "Bearer " + os.environ["NOTION_TOKEN"],
+    "Notion-Version": "2022-06-28",
+    "Content-Type": "application/json",
+}
+
+
 def build_index_for_notion_db(
     database_id: str, index_cls: Type = GPTSimpleVectorIndex, llm=None
 ) -> BaseGPTIndex:
@@ -77,7 +82,6 @@ def build_index_for_notion_db(
         return index_cls.load_from_disk(str(save_path))
 
     print(f"Loading data from the database {database_id}, will write to {save_path}")
-    loader = NotionPageReader(os.environ["NOTION_TOKEN"])
     cursor = None
     page_num = 0
     docs = []
@@ -85,8 +89,8 @@ def build_index_for_notion_db(
         page_num += 1
         print(f"Loading page #{page_num}")
         resp = requests.post(
-            notion.DATABASE_URL_TMPL.format(database_id=database_id),
-            headers=loader.headers,
+            f"https://api.notion.com/v1/databases/{database_id}/query",
+            headers=NOTION_HEADERS,
             json={"start_cursor": cursor} if cursor else {},
         )
         if resp.status_code != 200:
@@ -97,9 +101,23 @@ def build_index_for_notion_db(
             if (d := page["properties"]["Date"].get("date")) and (
                 rt := page["properties"]["Journal"]["rich_text"]
             ):
-                date = d["start"]
                 journal = rt[0]["text"]["content"]
-                docs.append(Document(journal, extra_info={"date": date}))
+                docs.append(
+                    Document(
+                        journal,
+                        extra_info={
+                            "Дата": d["start"],
+                            "Ключевые слова": ", ".join(
+                                w["name"]
+                                for w in page["properties"]["Key words"]["multi_select"]
+                            ),
+                            "Тренировки": ", ".join(
+                                w["name"]
+                                for w in page["properties"]["Workout"]["multi_select"]
+                            ),
+                        },
+                    )
+                )
         if not (cursor := resp.json().get("next_cursor")):
             break
 
