@@ -11,7 +11,6 @@ import sqlite3
 from llama_index import (
     GPTSQLStructStoreIndex,
     LLMPredictor,
-    Prompt,
     SQLDatabase,
 )
 from llama_index.readers.schema.base import Document
@@ -22,6 +21,7 @@ from langchain.agents import Tool, initialize_agent
 from langchain.agents.agent import AgentExecutor
 from langchain.chains.conversation.memory import ConversationBufferMemory
 from sqlalchemy import create_engine
+from tqdm import tqdm
 
 coloredlogs.install(level="DEBUG")
 
@@ -45,7 +45,7 @@ def main(csv_path: str):
     llm = OpenAI(temperature=0, model_name="gpt-3.5-turbo")  # type: ignore
 
     # Build a unstructured+structured Llama index.
-    index = build_index(Path(csv_path), LLMPredictor(llm))
+    index = build_index(Path(csv_path), llm)
 
     # Build a Langchain agent that will use our index as a tool.
     agent = build_agent(index, llm)
@@ -59,7 +59,7 @@ def main(csv_path: str):
         print(response)
 
 
-def build_index(csv_path: Path, llm_predictor: LLMPredictor) -> BaseGPTIndex:
+def build_index(csv_path: Path, llm: BaseLLM) -> BaseGPTIndex:
     """
     Build a Llama-index from a CSV database.
 
@@ -85,13 +85,17 @@ def build_index(csv_path: Path, llm_predictor: LLMPredictor) -> BaseGPTIndex:
             str(index_path),
             sql_database=SQLDatabase(create_engine(f"sqlite:///{db_path}")),
             table_name=TABLE_NAME,
-            llm_predictor=llm_predictor,
+            llm_predictor=LLMPredictor(llm),
         )
 
     # Pre-process the dataframe
     df = pd.read_csv(csv_path)
 
-    df = df.dropna(subset=["Date", "Journal"])
+    # Remove non-informative rows
+    df = df.dropna(subset=["Date"])
+
+    # Reverse order from old to new
+    df = df.iloc[::-1]
 
     # Removing [OLD] and [MOVED] columns
     df = df.loc[:, ~df.columns.str.contains(r"\[")]
@@ -115,23 +119,49 @@ def build_index(csv_path: Path, llm_predictor: LLMPredictor) -> BaseGPTIndex:
 
     df = df.applymap(_fix_relation_fields)
 
+    df["Journal"] = df["Journal"].fillna("No notes for this day")
+    df["Journal"] = df["Date"] + "\n\n" + df["Journal"]
+    df["Journal"] = df.apply(
+        lambda x: x["Journal"] + "\n\nSelf-reflection:\n" + x["Self-reflection"]
+        if not pd.isna(x["Self-reflection"])
+        else x["Journal"],
+        axis=1,
+    )
+
+    # Translate to English
+    llm_predictor = LLMPredictor(llm)
+    llm_metadata = llm_predictor.get_llm_metadata()
+    max_input_size = llm_metadata.max_input_size
+    prompt_start = "Translate the following into English:\n\n"
+    prompts = [prompt_start[:]]
+    for j in df["Journal"]:
+        if len(prompts[-1]) + len(j) + 2 > max_input_size:
+            prompts.append(prompt_start[:])
+        prompts[-1] += j + "\n\n"
+    print(
+        f"Translating {len(df)} entries with {len(prompts)} prompts, of character sizes: {[len(p) for p in prompts]}"
+    )
+    translations = []
+    for i, p in enumerate(tqdm(prompts)):
+        translation_path = db_path.with_name(f"translation_{i + 1}.txt")
+        if translation_path.exists():
+            with translation_path.open() as f:
+                translation = f.read()
+        else:
+            print(f"Translating chunk #{i + 1}:\n\n{p[:100]}...")
+            translation = llm.generate([p]).generations[0][0].text
+            with translation_path.open("w") as f:
+                f.write(translation)
+        translations.append(translation)
+    doc = Document("".join(translations))
+
     # Save the CSV to a database
     conn = sqlite3.connect(db_path)
     df.to_sql(TABLE_NAME, conn, if_exists="replace", index=True)
     conn.close()
 
-    # Getting our unstructured documents for an index. We don't want a document
-    # for each entry, as it would lead to a lot of ChatGPT queries. So we aggregate
-    # document per month. That shouldn't exceed the ChatGPT context length, and
-    # should keep the number of documetns limited.
-    df["MonthYear"] = pd.to_datetime(df["Date"]).dt.to_period("M")
-    df["Journal"] = df["Date"] + "\n\n" + df["Journal"]
-    monthly = df.groupby("MonthYear").agg({"Journal": ";".join})
-
-    docs = [Document(journal) for journal in monthly["Journal"]]
-
     index = GPTSQLStructStoreIndex(
-        docs,
+        [doc],
         sql_database=SQLDatabase(create_engine(f"sqlite:///{db_path}")),
         table_name=TABLE_NAME,
         llm_predictor=llm_predictor,
